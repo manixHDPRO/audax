@@ -1,0 +1,308 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  CHEF
+  SECRETAIRE
+  PROTOCOL
+  CEMG
+  SALLE_ATTENTE
+  OBSERVATEUR
+}
+
+enum AudienceStatus {
+  EN_ATTENTE
+  EN_ANALYSE
+  DEJA_ENVOYE
+  VALIDEE
+  REJETEE
+  PLANIFIEE
+  TERMINEE
+  ARCHIVEE
+}
+
+enum Priority {
+  PRIORITE_0
+  NORMALE
+  URGENTE
+  CRITIQUE
+}
+
+enum Confidentiality {
+  STANDARD
+  RESTREINT
+  SECRET
+}
+
+enum AudienceCategory {
+  DIPLOMATIQUE
+  MILITAIRE
+  CIVIL
+  INSTITUTIONNEL
+  AUTRE
+}
+
+enum AccessLevel {
+  STANDARD
+  RESTREINT
+  VIP
+}
+
+enum RoomStatus {
+  LIBRE
+  OCCUPEE
+  RESERVEE
+  MAINTENANCE
+}
+
+enum NotificationType {
+  INFO
+  SUCCESS
+  WARNING
+  CRITICAL
+}
+
+enum ValidationDecision {
+  APPROUVE
+  REJETE
+  EN_ATTENTE
+}
+
+model User {
+  id              String    @id @default(cuid())
+  email           String    @unique
+  passwordHash    String
+  firstName       String
+  lastName        String
+  role            UserRole  @default(OBSERVATEUR)
+  isActive        Boolean   @default(true)
+  twoFactorEnabled Boolean  @default(false)
+  twoFactorSecret String?
+  failedAttempts  Int       @default(0)
+  lockedUntil     DateTime?
+  lastLoginAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  audiencesCreated Audience[]         @relation("CreatedBy")
+  validations      Validation[]
+  comments         ValidationComment[]
+  notifications    Notification[]
+  auditLogs        AuditLog[]
+  refreshTokens    RefreshToken[]
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("refresh_tokens")
+}
+
+model Visitor {
+  id           String      @id @default(cuid())
+  firstName    String
+  lastName     String
+  organization String?
+  function     String?
+  email        String?
+  phone        String?
+  photoUrl     String?
+  accessLevel  AccessLevel @default(STANDARD)
+  badgeCode    String?     @unique
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  audienceVisitors AudienceVisitor[]
+
+  @@map("visitors")
+}
+
+model Audience {
+  id              String            @id @default(cuid())
+  reference       String            @unique
+  subject         String
+  motive          String
+  requesterName   String
+  requesterOrg    String?
+  status          AudienceStatus    @default(EN_ATTENTE)
+  priority        Priority          @default(NORMALE)
+  confidentiality Confidentiality @default(STANDARD)
+  category        AudienceCategory  @default(AUTRE)
+  scheduledAt     DateTime?
+  duration        Int               @default(30)
+  roomId          String?
+  createdById     String
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  createdBy    User                    @relation("CreatedBy", fields: [createdById], references: [id])
+  room         Room?                   @relation(fields: [roomId], references: [id])
+  visitors     AudienceVisitor[]
+  statusHistory AudienceStatusHistory[]
+  validations  Validation[]
+  documents    Document[]
+  attachments  Attachment[]
+  appointment  Appointment?
+
+  @@map("audiences")
+}
+
+model AudienceVisitor {
+  id         String   @id @default(cuid())
+  audienceId String
+  visitorId  String
+  isPrimary  Boolean  @default(false)
+  audience   Audience @relation(fields: [audienceId], references: [id], onDelete: Cascade)
+  visitor    Visitor  @relation(fields: [visitorId], references: [id], onDelete: Cascade)
+
+  @@unique([audienceId, visitorId])
+  @@map("audience_visitors")
+}
+
+model AudienceStatusHistory {
+  id         String         @id @default(cuid())
+  audienceId String
+  fromStatus AudienceStatus?
+  toStatus   AudienceStatus
+  comment    String?
+  changedBy  String
+  createdAt  DateTime       @default(now())
+  audience   Audience       @relation(fields: [audienceId], references: [id], onDelete: Cascade)
+
+  @@map("audience_status_history")
+}
+
+model Validation {
+  id         String             @id @default(cuid())
+  audienceId String
+  validatorId String
+  level      Int
+  decision   ValidationDecision @default(EN_ATTENTE)
+  comment    String?
+  decidedAt  DateTime?
+  createdAt  DateTime           @default(now())
+  audience   Audience           @relation(fields: [audienceId], references: [id], onDelete: Cascade)
+  validator  User               @relation(fields: [validatorId], references: [id])
+
+  @@map("validations")
+}
+
+model ValidationComment {
+  id        String   @id @default(cuid())
+  audienceId String
+  authorId  String
+  content   String
+  isInternal Boolean @default(true)
+  createdAt DateTime @default(now())
+  author    User     @relation(fields: [authorId], references: [id])
+
+  @@map("validation_comments")
+}
+
+model Room {
+  id        String     @id @default(cuid())
+  name      String     @unique
+  capacity  Int        @default(10)
+  floor     String?
+  status    RoomStatus @default(LIBRE)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  audiences    Audience[]
+  appointments Appointment[]
+
+  @@map("rooms")
+}
+
+model Appointment {
+  id         String   @id @default(cuid())
+  audienceId String   @unique
+  roomId     String?
+  startAt    DateTime
+  endAt      DateTime
+  notes      String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  audience Audience @relation(fields: [audienceId], references: [id], onDelete: Cascade)
+  room     Room?    @relation(fields: [roomId], references: [id])
+
+  @@map("appointments")
+}
+
+model Document {
+  id         String   @id @default(cuid())
+  audienceId String
+  type       String
+  title      String
+  filePath   String?
+  createdAt  DateTime @default(now())
+  audience   Audience @relation(fields: [audienceId], references: [id], onDelete: Cascade)
+
+  @@map("documents")
+}
+
+model Attachment {
+  id         String   @id @default(cuid())
+  audienceId String
+  filename   String
+  mimeType   String
+  size       Int
+  path       String
+  uploadedAt DateTime @default(now())
+  audience   Audience @relation(fields: [audienceId], references: [id], onDelete: Cascade)
+
+  @@map("attachments")
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  type      NotificationType @default(INFO)
+  title     String
+  message   String
+  isRead    Boolean          @default(false)
+  link      String?
+  createdAt DateTime         @default(now())
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String?
+  action     String
+  entity     String
+  entityId   String?
+  ipAddress  String?
+  beforeData Json?
+  afterData  Json?
+  createdAt  DateTime @default(now())
+  user       User?    @relation(fields: [userId], references: [id])
+
+  @@map("audit_logs")
+}
+
+model SystemSetting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String
+  updatedAt DateTime @updatedAt
+
+  @@map("system_settings")
+}

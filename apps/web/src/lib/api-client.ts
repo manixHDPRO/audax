@@ -1,0 +1,448 @@
+import { API_BASE_URL, API_UNAVAILABLE_MESSAGE } from './api-config';
+
+const API_URL = API_BASE_URL;
+
+const NO_REFRESH_PATHS = ['/auth/login', '/auth/refresh', '/auth/2fa/verify', '/auth/logout'];
+
+interface AuthHandlers {
+  getTokens: () => { accessToken: string | null; refreshToken: string | null };
+  setTokens: (accessToken: string, refreshToken: string) => void;
+  onExpired: () => void;
+}
+
+let authHandlers: AuthHandlers | null = null;
+let refreshPromise: Promise<string | null> | null = null;
+
+export function registerAuthHandlers(handlers: AuthHandlers) {
+  authHandlers = handlers;
+}
+
+async function tryRefreshAccessToken(): Promise<string | null> {
+  if (!authHandlers || !API_URL) return null;
+
+  if (refreshPromise) return refreshPromise;
+
+  refreshPromise = (async () => {
+    const { refreshToken } = authHandlers!.getTokens();
+    if (!refreshToken) {
+      authHandlers!.onExpired();
+      return null;
+    }
+
+    try {
+      const res = await fetch(`${API_URL}/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken }),
+      });
+
+      if (!res.ok) {
+        authHandlers!.onExpired();
+        return null;
+      }
+
+      const data = (await res.json()) as { accessToken: string; refreshToken: string };
+      authHandlers!.setTokens(data.accessToken, data.refreshToken);
+      return data.accessToken;
+    } catch {
+      authHandlers!.onExpired();
+      return null;
+    } finally {
+      refreshPromise = null;
+    }
+  })();
+
+  return refreshPromise;
+}
+
+async function parseResponse<T>(res: Response): Promise<T> {
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ message: res.statusText }));
+    const message = err.message;
+    const text = Array.isArray(message)
+      ? message.join(', ')
+      : typeof message === 'string'
+        ? message
+        : res.statusText;
+    throw new Error(text || 'Erreur API');
+  }
+  return res.json();
+}
+
+export async function apiFetch<T>(
+  path: string,
+  options: RequestInit & { token?: string } = {},
+): Promise<T> {
+  const { token, ...init } = options;
+  const headers: Record<string, string> = {
+    ...(init.headers as Record<string, string>),
+  };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  if (init.body && !headers['Content-Type']) headers['Content-Type'] = 'application/json';
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}${path}`, { ...init, headers });
+  } catch {
+    throw new Error(API_UNAVAILABLE_MESSAGE);
+  }
+
+  if (
+    res.status === 401 &&
+    token &&
+    authHandlers &&
+    !NO_REFRESH_PATHS.some((p) => path.startsWith(p))
+  ) {
+    const newToken = await tryRefreshAccessToken();
+    if (newToken) {
+      headers.Authorization = `Bearer ${newToken}`;
+      let retry: Response;
+      try {
+        retry = await fetch(`${API_URL}${path}`, { ...init, headers });
+      } catch {
+        throw new Error(API_UNAVAILABLE_MESSAGE);
+      }
+      return parseResponse<T>(retry);
+    }
+  }
+
+  return parseResponse<T>(res);
+}
+
+export interface LoginResponse {
+  requires2FA?: boolean;
+  tempToken?: string;
+  accessToken?: string;
+  refreshToken?: string;
+  user?: {
+    id: string;
+    email: string;
+    firstName: string;
+    lastName: string;
+    role: string;
+    twoFactorEnabled?: boolean;
+  };
+}
+
+export async function loginApi(email: string, password: string, totpCode?: string): Promise<LoginResponse> {
+  return apiFetch<LoginResponse>('/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ email, password, totpCode }),
+  });
+}
+
+export async function verify2FAApi(tempToken: string, totpCode: string): Promise<LoginResponse> {
+  return apiFetch<LoginResponse>('/auth/2fa/verify', {
+    method: 'POST',
+    body: JSON.stringify({ tempToken, totpCode }),
+  });
+}
+
+export async function setup2FAApi(token: string) {
+  return apiFetch<{ qrCodeDataUrl: string; secret: string }>('/auth/2fa/setup', { token });
+}
+
+export async function enable2FAApi(token: string, totpCode: string) {
+  return apiFetch('/auth/2fa/enable', { method: 'POST', token, body: JSON.stringify({ totpCode }) });
+}
+
+export async function disable2FAApi(token: string, totpCode: string) {
+  return apiFetch('/auth/2fa/disable', { method: 'POST', token, body: JSON.stringify({ totpCode }) });
+}
+
+export async function refreshTokenApi(refreshToken: string) {
+  return apiFetch<{ accessToken: string; refreshToken: string }>('/auth/refresh', {
+    method: 'POST',
+    body: JSON.stringify({ refreshToken }),
+  });
+}
+
+export async function logoutApi(refreshToken: string) {
+  return apiFetch<{ success: boolean }>('/auth/logout', {
+    method: 'POST',
+    body: JSON.stringify({ refreshToken }),
+  });
+}
+
+export interface MeResponse {
+  id: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  role: string;
+  isActive: boolean;
+  twoFactorEnabled: boolean;
+  lastLoginAt?: string | null;
+  createdAt: string;
+  permissions: string[];
+}
+
+export async function getMeApi(token: string) {
+  return apiFetch<MeResponse>('/auth/me', { token });
+}
+
+export async function changePasswordApi(token: string, currentPassword: string, newPassword: string) {
+  return apiFetch<{ success: boolean }>('/auth/me/password', {
+    method: 'PATCH',
+    token,
+    body: JSON.stringify({ currentPassword, newPassword }),
+  });
+}
+
+export async function rescheduleApi(token: string, audienceId: string, scheduledAt: string) {
+  return apiFetch<{ success: boolean; audience: AudienceApiRecord }>(`/calendar/audiences/${audienceId}/reschedule`, {
+    method: 'PATCH',
+    token,
+    body: JSON.stringify({ scheduledAt }),
+  });
+}
+
+export interface ValidateAudiencePayload {
+  decision: 'APPROUVE' | 'REJETE' | 'EN_ATTENTE';
+  comment?: string;
+  level?: number;
+}
+
+export async function validateAudienceApi(token: string, id: string, payload: ValidateAudiencePayload) {
+  return apiFetch(`/audiences/${id}/validate`, {
+    method: 'POST',
+    token,
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function forwardToDircabApi(token: string, id: string) {
+  return apiFetch<AudienceApiRecord>(`/audiences/${id}/forward-dircab`, {
+    method: 'POST',
+    token,
+  });
+}
+
+export interface CreateAudiencePayload {
+  subject: string;
+  motive: string;
+  requesterName: string;
+  requesterOrg?: string;
+  priority?: string;
+  confidentiality?: string;
+  category?: string;
+}
+
+export async function createAudienceApi(token: string, payload: CreateAudiencePayload) {
+  return apiFetch<AudienceApiRecord>('/audiences', {
+    method: 'POST',
+    token,
+    body: JSON.stringify(payload),
+  });
+}
+
+export interface AudienceApiRecord {
+  id: string;
+  reference: string;
+  subject: string;
+  motive: string;
+  requesterName: string;
+  requesterOrg?: string | null;
+  status: string;
+  priority: string;
+  confidentiality: string;
+  category: string;
+  scheduledAt?: string | null;
+  createdAt: string;
+  room?: { id: string; name: string; capacity: number; status: string } | null;
+  visitors?: {
+    visitor: {
+      id: string;
+      firstName: string;
+      lastName: string;
+      organization?: string | null;
+      accessLevel?: string;
+    };
+  }[];
+}
+
+export interface WaitingRoomAudienceApiRecord {
+  id: string;
+  reference: string;
+  subject: string;
+  requesterName: string;
+  category: string;
+  priority: string;
+  createdAt: string;
+}
+
+export async function listAudiencesApi(
+  token: string,
+  filters?: { status?: string; priority?: string; search?: string },
+) {
+  const params = new URLSearchParams();
+  if (filters?.status) params.set('status', filters.status);
+  if (filters?.priority) params.set('priority', filters.priority);
+  if (filters?.search) params.set('search', filters.search);
+  const qs = params.toString();
+  return apiFetch<AudienceApiRecord[]>(`/audiences${qs ? `?${qs}` : ''}`, { token });
+}
+
+export async function listMyTodayAudiencesApi(token: string) {
+  return apiFetch<WaitingRoomAudienceApiRecord[]>('/audiences/my-today', { token });
+}
+
+export async function getAudienceApi(token: string, id: string) {
+  return apiFetch<AudienceApiRecord>(`/audiences/${id}`, { token });
+}
+
+export async function deleteAudienceApi(token: string, id: string) {
+  return apiFetch<{ success: boolean }>(`/audiences/${id}`, {
+    method: 'DELETE',
+    token,
+  });
+}
+
+export interface UserListItem {
+  id: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  role: string;
+  isActive: boolean;
+  twoFactorEnabled?: boolean;
+  lastLoginAt?: string | null;
+  createdAt: string;
+}
+
+export interface CreateUserPayload {
+  email: string;
+  password: string;
+  firstName: string;
+  lastName: string;
+  role: string;
+}
+
+export interface UpdateUserPayload {
+  firstName?: string;
+  lastName?: string;
+  role?: string;
+  isActive?: boolean;
+}
+
+export async function listUsersApi(token: string) {
+  return apiFetch<UserListItem[]>('/users', { token });
+}
+
+export async function createUserApi(token: string, payload: CreateUserPayload) {
+  return apiFetch<UserListItem>('/users', {
+    method: 'POST',
+    token,
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateUserApi(token: string, id: string, payload: UpdateUserPayload) {
+  return apiFetch<UserListItem>(`/users/${id}`, {
+    method: 'PATCH',
+    token,
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function toggleUserActiveApi(token: string, id: string) {
+  return apiFetch<UserListItem>(`/users/${id}/toggle-active`, {
+    method: 'PATCH',
+    token,
+  });
+}
+
+export async function resetUserPasswordApi(token: string, id: string, password: string) {
+  return apiFetch<{ success: boolean }>(`/users/${id}/password`, {
+    method: 'PATCH',
+    token,
+    body: JSON.stringify({ password }),
+  });
+}
+
+export interface AuditLogItem {
+  id: string;
+  action: string;
+  entity: string;
+  entityId?: string | null;
+  ipAddress?: string | null;
+  createdAt: string;
+  user?: { firstName: string; lastName: string; email: string } | null;
+}
+
+export async function listAuditApi(token: string) {
+  return apiFetch<AuditLogItem[]>('/audit', { token });
+}
+
+export interface CustomRoleItem {
+  id: string;
+  code: string;
+  label: string;
+  description?: string;
+  permissions: string[];
+  createdAt: string;
+}
+
+export interface RolesMatrixResponse {
+  systemRoles: string[];
+  permissionKeys: string[];
+  permissionLabels: Record<string, string>;
+  roleLabels: Record<string, string>;
+  roleDescriptions: Record<string, string>;
+  matrix: Record<string, string[]>;
+  customRoles: CustomRoleItem[];
+}
+
+export async function getRolesMatrixApi(token: string) {
+  return apiFetch<RolesMatrixResponse>('/roles/matrix', { token });
+}
+
+export async function updateRolesMatrixApi(token: string, permissions: Record<string, string[]>) {
+  return apiFetch<RolesMatrixResponse>('/roles/matrix', {
+    method: 'PATCH',
+    token,
+    body: JSON.stringify({ permissions }),
+  });
+}
+
+export async function createCustomRoleApi(
+  token: string,
+  payload: { code: string; label: string; description?: string; permissions: string[] },
+) {
+  return apiFetch<CustomRoleItem>('/roles', {
+    method: 'POST',
+    token,
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateSystemRoleApi(
+  token: string,
+  code: string,
+  payload: { label?: string; description?: string },
+) {
+  return apiFetch<{ code: string; label: string; description?: string }>(`/roles/system/${code}`, {
+    method: 'PATCH',
+    token,
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateCustomRoleApi(
+  token: string,
+  id: string,
+  payload: { label?: string; description?: string; permissions?: string[] },
+) {
+  return apiFetch<CustomRoleItem>(`/roles/${id}`, {
+    method: 'PATCH',
+    token,
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deleteCustomRoleApi(token: string, id: string) {
+  return apiFetch<{ success: boolean }>(`/roles/${id}`, {
+    method: 'DELETE',
+    token,
+  });
+}

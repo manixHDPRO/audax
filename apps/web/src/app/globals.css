@@ -1,0 +1,105 @@
+@import "tailwindcss";
+
+@theme {
+  --color-military-950: #0a0f0a;
+  --color-military-900: #0f1a0f;
+  --color-military-800: #1a2e1a;
+  --color-military-700: #2d4a2d;
+  --color-military-600: #3d6b3d;
+  --color-military-500: #4a7c4a;
+  --color-military-400: #6b9f6b;
+  --color-carbon-950: #050505;
+  --color-carbon-900: #0a0a0a;
+  --color-carbon-800: #121212;
+  --color-carbon-700: #1a1a1a;
+  --color-carbon-600: #242424;
+  --color-carbon-500: #2e2e2e;
+  --color-gold-500: #c9a227;
+  --color-gold-400: #d4b545;
+  --color-gold-300: #e5cc6a;
+  --color-cream: #f5f3eb;
+  --font-sans: "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-display: "Segoe UI", system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background: var(--color-carbon-950);
+  color: var(--color-cream);
+  font-family: var(--font-sans);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+.bg-command-grid {
+  background-image:
+    linear-gradient(rgba(74, 124, 74, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(74, 124, 74, 0.03) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+
+.glow-green {
+  box-shadow: 0 0 20px rgba(74, 124, 74, 0.15), 0 0 40px rgba(74, 124, 74, 0.05);
+}
+
+.glow-gold {
+  box-shadow: 0 0 20px rgba(201, 162, 39, 0.2), 0 0 40px rgba(201, 162, 39, 0.08);
+}
+
+.glow-critical {
+  box-shadow: 0 0 24px rgba(239, 68, 68, 0.25);
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 20px rgba(239, 68, 68, 0.2); }
+  50% { box-shadow: 0 0 32px rgba(239, 68, 68, 0.4); }
+}
+
+.glass {
+  background: rgba(18, 18, 18, 0.72);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(74, 124, 74, 0.12);
+}
+
+.glass-strong {
+  background: rgba(10, 15, 10, 0.88);
+  backdrop-filter: blur(24px);
+  border: 1px solid rgba(74, 124, 74, 0.18);
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-carbon-900);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-military-700);
+  border-radius: 3px;
+}
+
+.scanlines::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 0, 0, 0.03) 2px,
+    rgba(0, 0, 0, 0.03) 4px
+  );
+  pointer-events: none;
+  z-index: 1;
+}
