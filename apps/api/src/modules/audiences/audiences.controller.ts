@@ -32,6 +32,12 @@ export class AudiencesController {
     return this.audiencesService.getStats(role);
   }
 
+  @Get('visit-targets')
+  @RequirePermission('CREATE_AUDIENCE')
+  findVisitTargets() {
+    return this.audiencesService.findVisitTargets();
+  }
+
   @Get('my-today')
   @RequirePermission('VIEW_OWN_AUDIENCES_TODAY')
   findMyToday(@CurrentUser('sub') userId: string) {

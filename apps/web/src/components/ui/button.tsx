@@ -15,6 +15,7 @@ const buttonVariants = cva(
         ghost: 'hover:bg-carbon-700 text-cream/80 hover:text-cream',
         outline: 'border border-military-700/50 bg-transparent hover:bg-military-900/50 text-cream',
         destructive: 'bg-red-900/40 text-red-400 border border-red-800/50 hover:bg-red-900/60',
+        tactical: 'bg-carbon-900 text-military-400 border border-military-800/50 hover:border-military-500 hover:text-military-300 uppercase tracking-widest font-bold text-[10px] font-mono',
       },
       size: {
         default: 'h-10 px-4 py-2',

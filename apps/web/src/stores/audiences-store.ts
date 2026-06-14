@@ -6,6 +6,7 @@ import type { Audience, Priority, Confidentiality, VisitMode, AccompaniedPerson,
 import { nextAudienceReference, mapApiAudience } from '@/lib/audience-utils';
 import { getAudienceApi, listAudiencesApi, listMyTodayAudiencesApi } from '@/lib/api-client';
 import { API_UNAVAILABLE_MESSAGE } from '@/lib/api-config';
+import { MOCK_AUDIENCES } from '@/lib/mock-data';
 
 export interface CreateAudienceInput {
   subject: string;
@@ -25,6 +26,18 @@ function nextReference(audiences: Audience[]): string {
   return nextAudienceReference(audiences.map((a) => a.reference));
 }
 
+/** Conserve l'historique détaillé quand la liste API ne le renvoie pas. */
+function mergeAudienceDetail(previous: Audience | undefined, incoming: Audience): Audience {
+  if (!previous) return incoming;
+  return {
+    ...incoming,
+    statusHistory: incoming.statusHistory?.length ? incoming.statusHistory : previous.statusHistory,
+    validations: incoming.validations?.length ? incoming.validations : previous.validations,
+    visitTarget: incoming.visitTarget ?? previous.visitTarget,
+    createdBy: incoming.createdBy ?? previous.createdBy,
+  };
+}
+
 interface AudiencesState {
   audiences: Audience[];
   waitingRoomToday: WaitingRoomAudienceEntry[];
@@ -37,9 +50,9 @@ interface AudiencesState {
   getById: (id: string) => Audience | undefined;
   setAudiences: (audiences: Audience[]) => void;
   clearAllAudiences: () => void;
-  syncFromApi: (token: string) => Promise<boolean>;
+  syncFromApi: (token: string, options?: { silent?: boolean }) => Promise<boolean>;
   syncWaitingRoomToday: (token: string) => Promise<boolean>;
-  fetchAudienceById: (token: string, id: string) => Promise<Audience | undefined>;
+  fetchAudienceById: (token: string, id: string, options?: { force?: boolean }) => Promise<Audience | undefined>;
   removeAudience: (id: string) => void;
   upsertAudience: (audience: Audience) => void;
 }
@@ -95,23 +108,29 @@ export const useAudiencesStore = create<AudiencesState>()(
 
       clearAllAudiences: () => set({ audiences: [], waitingRoomToday: [], lastSyncedAt: null, syncError: null }),
 
-      syncFromApi: async (token) => {
-        set({ isSyncing: true, syncError: null });
+      syncFromApi: async (token, options) => {
+        const silent = options?.silent ?? false;
+        if (!silent) set({ isSyncing: true, syncError: null });
         try {
           const records = await listAudiencesApi(token);
+          const previousById = new Map(get().audiences.map((a) => [a.id, a]));
           set({
-            audiences: records.map(mapApiAudience),
+            audiences: records.map((record) =>
+              mergeAudienceDetail(previousById.get(record.id), mapApiAudience(record)),
+            ),
             lastSyncedAt: new Date().toISOString(),
             syncError: null,
           });
           return true;
         } catch (error) {
-          set({
-            syncError: error instanceof Error ? error.message : API_UNAVAILABLE_MESSAGE,
-          });
+          if (!silent) {
+            set({
+              syncError: error instanceof Error ? error.message : API_UNAVAILABLE_MESSAGE,
+            });
+          }
           return false;
         } finally {
-          set({ isSyncing: false });
+          if (!silent) set({ isSyncing: false });
         }
       },
 
@@ -143,17 +162,20 @@ export const useAudiencesStore = create<AudiencesState>()(
         }
       },
 
-      fetchAudienceById: async (token, id) => {
-        const existing = get().getById(id);
-        if (existing) return existing;
+      fetchAudienceById: async (token, id, options) => {
+        const cached = get().getById(id);
+        if (!options?.force && cached?.statusHistory?.length) {
+          return cached;
+        }
 
         try {
           const record = await getAudienceApi(token, id);
           const audience = mapApiAudience(record);
-          get().insertAudience(audience);
-          return audience;
+          const previous = get().getById(id);
+          get().upsertAudience(mergeAudienceDetail(previous, audience));
+          return mergeAudienceDetail(previous, audience);
         } catch {
-          return undefined;
+          return cached;
         }
       },
 
@@ -166,7 +188,7 @@ export const useAudiencesStore = create<AudiencesState>()(
         const idx = list.findIndex((a) => a.id === audience.id);
         if (idx >= 0) {
           const next = [...list];
-          next[idx] = { ...next[idx], ...audience };
+          next[idx] = mergeAudienceDetail(list[idx], audience);
           set({ audiences: next });
         } else {
           set({ audiences: [audience, ...list] });
@@ -174,7 +196,7 @@ export const useAudiencesStore = create<AudiencesState>()(
       },
     }),
     {
-      name: 'audax-audiences-v2',
+      name: 'audax-audiences-v3',
       partialize: (state) => ({
         audiences: state.audiences,
         waitingRoomToday: state.waitingRoomToday,

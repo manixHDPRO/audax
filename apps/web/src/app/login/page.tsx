@@ -7,6 +7,7 @@ import { Hexagon, Shield, Eye, EyeOff, Lock, KeyRound, Loader2, RefreshCw } from
 import { Button } from '@/components/ui/button';
 import { useAuthStore, API_REQUIRED_MESSAGE, API_UNAVAILABLE_MESSAGE, getDefaultAppRoute } from '@/stores/auth-store';
 import { checkApiHealth } from '@/lib/api-config';
+import { cn } from '@/lib/utils';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('admin@audax.fardc.cd');
@@ -108,102 +109,121 @@ export default function LoginPage() {
             </p>
           </div>
 
-          <form onSubmit={handleSubmit} className="glass-strong rounded-2xl p-8 space-y-5">
-            <div className="flex items-center gap-2 text-xs text-cream/40 mb-2">
-              <Shield className="w-3 h-3 text-military-400" />
-              <span>{show2FAStep ? 'Entrez le code de votre authenticator' : 'Connexion sécurisée — Usage interne'}</span>
+          <form onSubmit={handleSubmit} className="glass-strong rounded-2xl p-8 space-y-6 tactical-corners scanlines relative">
+            <div className="absolute top-0 right-0 p-2">
+              <div className="text-[8px] font-mono text-military-500 uppercase tracking-widest">Secure_Auth_v1.0</div>
+            </div>
+
+            <div className="flex items-center gap-2 text-[10px] font-mono text-military-500 uppercase tracking-wider mb-2">
+              <Shield className="w-3.5 h-3.5" />
+              <span>{show2FAStep ? 'Verification 2FA active' : 'Terminal de Connexion Sécurisé'}</span>
             </div>
 
             {!show2FAStep ? (
               <>
-                <div>
-                  <label className="text-xs font-medium text-cream/60 uppercase tracking-wider">Identifiant</label>
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-mono font-bold text-military-500 uppercase tracking-[0.2em] ml-1">Identifiant</label>
                   <input
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    className="mt-1.5 w-full h-11 px-4 rounded-xl bg-carbon-800 border border-carbon-600 text-cream focus:outline-none focus:border-military-500 transition-all"
+                    className="w-full h-11 px-4 rounded-xl bg-carbon-900/50 border border-military-800/50 text-cream focus:outline-none focus:border-military-500 focus:glow-green transition-all font-mono text-sm"
                     required
                   />
                 </div>
-                <div>
-                  <label className="text-xs font-medium text-cream/60 uppercase tracking-wider">Mot de passe</label>
-                  <div className="relative mt-1.5">
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-mono font-bold text-military-500 uppercase tracking-[0.2em] ml-1">Mot de passe</label>
+                  <div className="relative">
                     <input
                       type={showPassword ? 'text' : 'password'}
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      className="w-full h-11 px-4 pr-11 rounded-xl bg-carbon-800 border border-carbon-600 text-cream focus:outline-none focus:border-military-500 transition-all"
+                      className="w-full h-11 px-4 pr-11 rounded-xl bg-carbon-900/50 border border-military-800/50 text-cream focus:outline-none focus:border-military-500 focus:glow-green transition-all font-mono text-sm"
                       required
                     />
-                    <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-cream/40 hover:text-cream cursor-pointer">
+                    <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-cream/20 hover:text-military-400 cursor-pointer transition-colors">
                       {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
                   </div>
                 </div>
               </>
             ) : (
-              <div>
-                <label className="text-xs font-medium text-cream/60 uppercase tracking-wider">Code 2FA</label>
+              <div className="space-y-3">
+                <label className="text-[10px] font-mono font-bold text-gold-500 uppercase tracking-[0.2em] text-center block">Code de Sécurité 2FA</label>
                 <input
                   type="text"
                   inputMode="numeric"
                   value={totpCode}
                   onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                  className="mt-1.5 w-full h-14 px-4 rounded-xl bg-carbon-800 border border-gold-500/30 text-cream text-center text-2xl tracking-[0.5em] font-mono focus:outline-none focus:border-gold-500 glow-gold transition-all"
+                  className="w-full h-16 px-4 rounded-xl bg-carbon-900/50 border border-gold-500/30 text-gold-400 text-center text-3xl tracking-[0.6em] font-mono focus:outline-none focus:border-gold-500 glow-gold transition-all"
                   placeholder="000000"
                   autoFocus
                   maxLength={6}
                   required
                 />
-                <button type="button" onClick={() => { cancel2FA(); setTotpCode(''); setError(''); }} className="mt-2 text-xs text-cream/40 hover:text-cream cursor-pointer">
-                  ← Retour à la connexion
+                <button type="button" onClick={() => { cancel2FA(); setTotpCode(''); setError(''); }} className="w-full text-[10px] font-mono text-cream/30 hover:text-cream uppercase tracking-widest cursor-pointer transition-colors py-2">
+                  ← Annuler et Retour
                 </button>
               </div>
             )}
 
             {apiReady === false && !error && (
-              <div className="rounded-xl border border-amber-800/40 bg-amber-950/30 p-3 space-y-2">
-                <p className="text-sm text-amber-300/90 flex items-center gap-2">
+              <div className="rounded-xl border border-amber-800/40 bg-amber-950/20 p-4 space-y-3 tactical-corners">
+                <p className="text-[10px] font-mono text-amber-400 flex items-center gap-2 uppercase tracking-wider">
                   {checkingApi ? (
                     <Loader2 className="w-4 h-4 animate-spin shrink-0" />
                   ) : (
                     <RefreshCw className="w-4 h-4 shrink-0" />
                   )}
-                  {checkingApi ? 'Vérification de l\'API…' : API_UNAVAILABLE_MESSAGE}
+                  {checkingApi ? 'Synchronisation...' : 'Lien API Interrompu'}
                 </p>
-                <p className="text-xs text-cream/40">{API_REQUIRED_MESSAGE}</p>
-                <Button type="button" variant="outline" size="sm" className="w-full" onClick={() => void probeApi()}>
-                  <RefreshCw className="w-3.5 h-3.5" /> Réessayer la connexion API
+                <Button type="button" variant="tactical" size="sm" className="w-full border-amber-800/50 text-amber-500 hover:border-amber-500" onClick={() => void probeApi()}>
+                  Réinitialiser la Liaison
                 </Button>
               </div>
             )}
 
             {apiReady === true && (
-              <p className="text-xs text-military-400 flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-military-400 animate-pulse" />
-                API connectée — prêt pour la connexion
-              </p>
+              <div className="flex items-center justify-between px-1">
+                <p className="text-[9px] font-mono text-military-500 flex items-center gap-2 uppercase tracking-widest">
+                  <span className="w-1.5 h-1.5 rounded-full bg-military-500 animate-pulse shadow-[0_0_5px_rgba(74,124,74,0.8)]" />
+                  Lien API Établi
+                </p>
+                <span className="text-[9px] font-mono text-military-800">SECURE_CHANNEL_ALPHA</span>
+              </div>
             )}
 
             {error && (
-              <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-sm text-red-400">{error}</motion.p>
+              <motion.div initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} className="p-3 rounded-lg bg-red-950/20 border border-red-900/50">
+                <p className="text-xs font-mono text-red-400 uppercase tracking-tighter text-center">{error}</p>
+              </motion.div>
             )}
 
             <Button
               type="submit"
-              className="w-full h-12 text-base"
+              variant={show2FAStep ? "gold" : "default"}
+              className={cn(
+                "w-full h-14 text-sm font-bold uppercase tracking-[0.2em] transition-all duration-500",
+                !show2FAStep && "glow-green-strong"
+              )}
               disabled={loading || apiReady === false || (show2FAStep && totpCode.length !== 6)}
             >
-              <Lock className="w-4 h-4" />
-              {loading ? 'Vérification...' : show2FAStep ? 'Valider le code 2FA' : 'Accéder au centre de commandement'}
+              {loading ? (
+                <Loader2 className="w-5 h-5 animate-spin" />
+              ) : (
+                <>
+                  <Lock className="w-4 h-4 mr-2" />
+                  {show2FAStep ? 'Authentifier' : 'Initialiser Connexion'}
+                </>
+              )}
             </Button>
 
             {!show2FAStep && (
-              <div className="pt-4 border-t border-carbon-700">
-                <p className="text-[10px] text-cream/30 text-center leading-relaxed">
-                  Mot de passe : Audax2026! — Activez la 2FA dans Paramètres
-                </p>
+              <div className="pt-6 border-t border-military-900/50">
+                <div className="flex justify-between items-center px-1">
+                  <span className="text-[8px] font-mono text-military-800 uppercase">Cabinet Chef EMG</span>
+                  <span className="text-[8px] font-mono text-military-800 uppercase">FARDC © 2026</span>
+                </div>
               </div>
             )}
           </form>

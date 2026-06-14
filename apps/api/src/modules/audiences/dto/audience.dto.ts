@@ -29,6 +29,9 @@ export class CreateAudienceDto {
   @IsOptional()
   @IsEnum(AudienceCategory)
   category?: AudienceCategory;
+
+  @IsString()
+  visitTargetUserId!: string;
 }
 
 export class UpdateAudienceDto {

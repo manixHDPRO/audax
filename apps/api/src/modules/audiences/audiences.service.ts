@@ -6,8 +6,12 @@ import { getAudienceDatePrefix, nextAudienceReference } from '../../common/audie
 import {
   assertCanViewAudience,
   canViewPriorite0Audiences,
-  priorite0ExcludeWhere,
 } from '../../common/priorite0-access';
+import { audienceListWhereForRole } from '../../common/audience-role-access';
+import {
+  notifyAudienceCreated,
+  notifyAudienceForwardedToDircab,
+} from '../../common/audience-notifications';
 
 @Injectable()
 export class AudiencesService {
@@ -42,6 +46,14 @@ export class AudiencesService {
     });
   }
 
+  async findVisitTargets() {
+    return this.prisma.user.findMany({
+      where: { isActive: true },
+      select: { id: true, firstName: true, lastName: true, role: true },
+      orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
+    });
+  }
+
   async findAll(filters: {
     status?: string;
     priority?: string;
@@ -54,7 +66,7 @@ export class AudiencesService {
 
     return this.prisma.audience.findMany({
       where: {
-        ...priorite0ExcludeWhere(filters.role),
+        ...audienceListWhereForRole(filters.role),
         ...(filters.status && { status: filters.status as AudienceStatus }),
         ...(filters.priority && { priority: filters.priority as never }),
         ...(filters.search && {
@@ -69,6 +81,7 @@ export class AudiencesService {
         visitors: { include: { visitor: true } },
         room: true,
         createdBy: { select: { firstName: true, lastName: true } },
+        visitTarget: { select: { id: true, firstName: true, lastName: true, role: true } },
         validations: { include: { validator: { select: { firstName: true, lastName: true } } } },
       },
       orderBy: [{ priority: 'desc' }, { createdAt: 'desc' }],
@@ -82,6 +95,7 @@ export class AudiencesService {
         visitors: { include: { visitor: true } },
         room: true,
         createdBy: { select: { firstName: true, lastName: true, email: true } },
+        visitTarget: { select: { id: true, firstName: true, lastName: true, role: true } },
         statusHistory: { orderBy: { createdAt: 'desc' } },
         validations: { include: { validator: { select: { firstName: true, lastName: true } } } },
         appointment: true,
@@ -89,10 +103,35 @@ export class AudiencesService {
     });
     if (!audience) throw new NotFoundException('Audience introuvable');
     assertCanViewAudience(audience, role);
-    return audience;
+
+    const changerIds = [...new Set(audience.statusHistory.map((h) => h.changedBy))];
+    const changers =
+      changerIds.length > 0
+        ? await this.prisma.user.findMany({
+            where: { id: { in: changerIds } },
+            select: { id: true, firstName: true, lastName: true },
+          })
+        : [];
+    const changerMap = new Map(changers.map((u) => [u.id, u]));
+
+    return {
+      ...audience,
+      statusHistory: audience.statusHistory.map((entry) => ({
+        ...entry,
+        changedByUser: changerMap.get(entry.changedBy) ?? null,
+      })),
+    };
   }
 
   async create(dto: CreateAudienceDto, userId: string) {
+    const visitTarget = await this.prisma.user.findFirst({
+      where: { id: dto.visitTargetUserId, isActive: true },
+      select: { id: true },
+    });
+    if (!visitTarget) {
+      throw new BadRequestException('Personne à voir introuvable ou inactive');
+    }
+
     const datePrefix = getAudienceDatePrefix();
     const todayAudiences = await this.prisma.audience.findMany({
       where: { reference: { startsWith: `AUD-${datePrefix}-` } },
@@ -100,7 +139,7 @@ export class AudiencesService {
     });
     const reference = nextAudienceReference(todayAudiences.map((a) => a.reference));
 
-    return this.prisma.audience.create({
+    const audience = await this.prisma.audience.create({
       data: {
         reference,
         subject: dto.subject,
@@ -111,12 +150,17 @@ export class AudiencesService {
         confidentiality: dto.confidentiality,
         category: dto.category,
         createdById: userId,
+        visitTargetUserId: dto.visitTargetUserId,
         statusHistory: {
           create: { toStatus: 'EN_ATTENTE', changedBy: userId, comment: 'Demande créée' },
         },
       },
       include: { visitors: { include: { visitor: true } } },
     });
+
+    await notifyAudienceCreated(this.prisma, audience);
+
+    return audience;
   }
 
   async update(id: string, dto: UpdateAudienceDto, userId: string, role: UserRole) {
@@ -175,6 +219,8 @@ export class AudiencesService {
       },
     });
 
+    await notifyAudienceForwardedToDircab(this.prisma, updated);
+
     return updated;
   }
 
@@ -215,6 +261,7 @@ export class AudiencesService {
     await this.prisma.audienceStatusHistory.create({
       data: {
         audienceId: id,
+        fromStatus: audience.status,
         toStatus: newStatus,
         changedBy: userId,
         comment: dto.comment,
@@ -231,7 +278,7 @@ export class AudiencesService {
   }
 
   async getStats(role: UserRole) {
-    const scope = priorite0ExcludeWhere(role);
+    const scope = audienceListWhereForRole(role);
     const [total, enAttente, enAnalyse, validees, rejetees, planifiees, terminees, critiques] =
       await Promise.all([
         this.prisma.audience.count({ where: scope }),

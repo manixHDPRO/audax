@@ -92,6 +92,7 @@ model User {
   updatedAt       DateTime  @updatedAt
 
   audiencesCreated Audience[]         @relation("CreatedBy")
+  audiencesToVisit Audience[]         @relation("VisitTarget")
   validations      Validation[]
   comments         ValidationComment[]
   notifications    Notification[]
@@ -145,11 +146,13 @@ model Audience {
   scheduledAt     DateTime?
   duration        Int               @default(30)
   roomId          String?
+  visitTargetUserId String?
   createdById     String
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt
 
   createdBy    User                    @relation("CreatedBy", fields: [createdById], references: [id])
+  visitTarget  User?                   @relation("VisitTarget", fields: [visitTargetUserId], references: [id])
   room         Room?                   @relation(fields: [roomId], references: [id])
   visitors     AudienceVisitor[]
   statusHistory AudienceStatusHistory[]
@@ -158,6 +161,7 @@ model Audience {
   attachments  Attachment[]
   appointment  Appointment?
 
+  @@index([visitTargetUserId])
   @@map("audiences")
 }
 

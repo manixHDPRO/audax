@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Save, AlertCircle, CheckCircle2, Plus, Trash2, Users } from 'lucide-react';
@@ -14,9 +14,10 @@ import {
 import { Button } from '@/components/ui/button';
 import { useAudiencesStore } from '@/stores/audiences-store';
 import { useAuthStore, isWaitingRoomRole } from '@/stores/auth-store';
-import { createAudienceApi } from '@/lib/api-client';
+import { createAudienceApi, listVisitTargetsApi } from '@/lib/api-client';
 import { formatAccompaniedPerson } from '@/lib/audience-utils';
-import type { Audience, Priority, Confidentiality, VisitMode, AccompaniedPerson } from '@/types';
+import type { Audience, Priority, Confidentiality, VisitMode, AccompaniedPerson, UserRole } from '@/types';
+import { ROLE_LABELS } from '@/types';
 
 const CATEGORIES = [
   { value: 'MILITAIRE', label: 'Militaire' },
@@ -74,6 +75,11 @@ export function NewAudienceModal({ open, onOpenChange }: NewAudienceModalProps) 
   const [category, setCategory] = useState('MILITAIRE');
   const [visitMode, setVisitMode] = useState<VisitMode>('INDIVIDUEL');
   const [accompaniedPersons, setAccompaniedPersons] = useState<AccompaniedPerson[]>([emptyAccompanied()]);
+  const [visitTargetUserId, setVisitTargetUserId] = useState('');
+  const [visitTargets, setVisitTargets] = useState<
+    { id: string; firstName: string; lastName: string; role: string }[]
+  >([]);
+  const [loadingTargets, setLoadingTargets] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState<{ reference: string; id: string; priorite0?: boolean } | null>(null);
@@ -85,10 +91,32 @@ export function NewAudienceModal({ open, onOpenChange }: NewAudienceModalProps) 
     setCategory('MILITAIRE');
     setVisitMode('INDIVIDUEL');
     setAccompaniedPersons([emptyAccompanied()]);
+    setVisitTargetUserId('');
     setError('');
     setSuccess(null);
     setLoading(false);
   };
+
+  useEffect(() => {
+    if (!open || !accessToken) return;
+
+    let cancelled = false;
+    setLoadingTargets(true);
+    void listVisitTargetsApi(accessToken)
+      .then((users) => {
+        if (!cancelled) setVisitTargets(users);
+      })
+      .catch(() => {
+        if (!cancelled) setError('Impossible de charger la liste des personnes à voir');
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingTargets(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open, accessToken]);
 
   const handleOpenChange = (next: boolean) => {
     if (!next) resetForm();
@@ -137,6 +165,7 @@ export function NewAudienceModal({ open, onOpenChange }: NewAudienceModalProps) 
     const cat = String(form.get('category') ?? category);
     const priority = String(form.get('priority') ?? 'NORMALE') as Priority;
     const confidentiality = String(form.get('confidentiality') ?? 'STANDARD') as Confidentiality;
+    const personToVisit = visitTargetUserId.trim();
 
     const persons = accompaniedPersons
       .map((p) => ({ name: p.name.trim(), grade: p.grade?.trim() || undefined }))
@@ -144,6 +173,12 @@ export function NewAudienceModal({ open, onOpenChange }: NewAudienceModalProps) 
 
     if (!nom || !fonction || !objet) {
       setError('Veuillez remplir tous les champs obligatoires.');
+      setLoading(false);
+      return;
+    }
+
+    if (!personToVisit) {
+      setError('Veuillez sélectionner la personne à voir.');
       setLoading(false);
       return;
     }
@@ -201,8 +236,10 @@ export function NewAudienceModal({ open, onOpenChange }: NewAudienceModalProps) 
         category: payload.category,
         priority: payload.priority,
         confidentiality: payload.confidentiality,
+        visitTargetUserId: personToVisit,
       });
       const isPriorite0 = payload.priority === 'PRIORITE_0';
+      const selectedTarget = visitTargets.find((u) => u.id === personToVisit);
 
       if (isWaitingRoom) {
         useAudiencesStore.getState().insertWaitingRoomEntry({
@@ -231,6 +268,14 @@ export function NewAudienceModal({ open, onOpenChange }: NewAudienceModalProps) 
           visitMode: payload.visitMode,
           visitorFunction: payload.visitorFunction,
           accompaniedPersons: payload.accompaniedPersons,
+          visitTarget: selectedTarget
+            ? {
+                id: selectedTarget.id,
+                firstName: selectedTarget.firstName,
+                lastName: selectedTarget.lastName,
+                role: selectedTarget.role as UserRole,
+              }
+            : undefined,
           createdAt: createdApi.createdAt,
         });
         await useAudiencesStore.getState().syncFromApi(accessToken);
@@ -367,6 +412,31 @@ export function NewAudienceModal({ open, onOpenChange }: NewAudienceModalProps) 
                 <div>
                   <label className={labelClass} htmlFor="fonction">Fonction *</label>
                   <input id="fonction" name="fonction" type="text" required placeholder="Fonction ou titre" className={inputClass} />
+                </div>
+
+                <div>
+                  <label className={labelClass} htmlFor="visitTargetUserId">Personne à voir *</label>
+                  <select
+                    id="visitTargetUserId"
+                    name="visitTargetUserId"
+                    required
+                    value={visitTargetUserId}
+                    onChange={(e) => setVisitTargetUserId(e.target.value)}
+                    disabled={loadingTargets}
+                    className={inputClass}
+                  >
+                    <option value="" disabled>
+                      {loadingTargets ? 'Chargement…' : 'Sélectionner une personne'}
+                    </option>
+                    {visitTargets.map((user) => (
+                      <option key={user.id} value={user.id}>
+                        {user.firstName} {user.lastName}
+                        {user.role in ROLE_LABELS
+                          ? ` — ${ROLE_LABELS[user.role as UserRole]}`
+                          : ''}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 <div>

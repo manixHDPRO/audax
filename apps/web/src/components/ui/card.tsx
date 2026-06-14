@@ -2,11 +2,22 @@ import { cn } from '@/lib/utils';
 
 interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
   glow?: boolean;
+  tactical?: boolean;
+  scanlines?: boolean;
 }
 
-export function Card({ className, glow, children, ...props }: CardProps) {
+export function Card({ className, glow, tactical, scanlines, children, ...props }: CardProps) {
   return (
-    <div className={cn('glass rounded-xl p-6', glow && 'glow-green', className)} {...props}>
+    <div
+      className={cn(
+        'glass rounded-xl p-6 transition-all duration-300',
+        glow && 'glow-green-strong border-military-600/30',
+        tactical && 'tactical-corners',
+        scanlines && 'scanlines',
+        className
+      )}
+      {...props}
+    >
       {children}
     </div>
   );

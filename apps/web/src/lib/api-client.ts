@@ -226,6 +226,18 @@ export interface CreateAudiencePayload {
   priority?: string;
   confidentiality?: string;
   category?: string;
+  visitTargetUserId: string;
+}
+
+export interface VisitTargetUser {
+  id: string;
+  firstName: string;
+  lastName: string;
+  role: string;
+}
+
+export async function listVisitTargetsApi(token: string) {
+  return apiFetch<VisitTargetUser[]>('/audiences/visit-targets', { token });
 }
 
 export async function createAudienceApi(token: string, payload: CreateAudiencePayload) {
@@ -259,6 +271,30 @@ export interface AudienceApiRecord {
       accessLevel?: string;
     };
   }[];
+  statusHistory?: AudienceStatusHistoryApiRecord[];
+  validations?: AudienceValidationApiRecord[];
+  createdBy?: { firstName: string; lastName: string; email?: string };
+  visitTarget?: { id: string; firstName: string; lastName: string; role?: string };
+}
+
+export interface AudienceStatusHistoryApiRecord {
+  id: string;
+  fromStatus?: string | null;
+  toStatus: string;
+  comment?: string | null;
+  changedBy: string;
+  createdAt: string;
+  changedByUser?: { firstName: string; lastName: string } | null;
+}
+
+export interface AudienceValidationApiRecord {
+  id: string;
+  decision: string;
+  comment?: string | null;
+  level: number;
+  decidedAt?: string | null;
+  createdAt: string;
+  validator: { firstName: string; lastName: string };
 }
 
 export interface WaitingRoomAudienceApiRecord {

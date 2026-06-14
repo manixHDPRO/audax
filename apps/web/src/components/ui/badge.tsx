@@ -20,17 +20,26 @@ const priorityStyles: Record<Priority, string> = {
   CRITIQUE: 'bg-red-900/50 text-red-400 glow-critical',
 };
 
-export function StatusBadge({ status }: { status: AudienceStatus }) {
+export function StatusBadge({ status, className }: { status: AudienceStatus; className?: string }) {
   return (
-    <span className={cn('inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border', statusStyles[status])}>
+    <span className={cn(
+      'inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border transition-all duration-300',
+      statusStyles[status],
+      className
+    )}>
+      <div className="w-1 h-1 rounded-full bg-current mr-1.5 opacity-70" />
       {STATUS_LABELS[status]}
     </span>
   );
 }
 
-export function PriorityBadge({ priority }: { priority: Priority }) {
+export function PriorityBadge({ priority, className }: { priority: Priority; className?: string }) {
   return (
-    <span className={cn('inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold uppercase tracking-wider', priorityStyles[priority])}>
+    <span className={cn(
+      'inline-flex items-center px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase tracking-[0.1em] border transition-all duration-300',
+      priorityStyles[priority],
+      className
+    )}>
       {PRIORITY_LABELS[priority]}
     </span>
   );

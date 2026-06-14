@@ -12,10 +12,9 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { RescheduleAudienceModal } from '@/components/audiences/reschedule-audience-modal';
 import { useAudiencesStore } from '@/stores/audiences-store';
 import { formatDate } from '@/lib/utils';
-import { normalizeAccompaniedPersons } from '@/lib/audience-utils';
+import { normalizeAccompaniedPersons, describeStatusHistoryEntry, formatUserName, sortStatusHistoryNewestFirst } from '@/lib/audience-utils';
 import { PRIORITY_LABELS, CONFIDENTIALITY_LABELS, type Audience, type AudienceStatus } from '@/types';
 import { deleteAudienceApi, forwardToDircabApi, validateAudienceApi } from '@/lib/api-client';
-import { mapApiAudience } from '@/lib/audience-utils';
 import {
   useAuthStore,
   canDeleteAudience,
@@ -26,21 +25,15 @@ import {
 
 const ACTIONABLE_STATUSES: AudienceStatus[] = ['EN_ATTENTE', 'EN_ANALYSE', 'VALIDEE', 'PLANIFIEE'];
 
-function statusAfterValidation(decision: 'APPROUVE' | 'REJETE'): AudienceStatus {
-  if (decision === 'APPROUVE') return 'VALIDEE';
-  return 'REJETEE';
-}
-
 export default function AudienceDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
-  const audience = useAudiencesStore((s) => s.getById(id));
+  const audience = useAudiencesStore((s) => s.audiences.find((a) => a.id === id));
   const fetchAudienceById = useAudiencesStore((s) => s.fetchAudienceById);
   const removeAudience = useAudiencesStore((s) => s.removeAudience);
-  const upsertAudience = useAudiencesStore((s) => s.upsertAudience);
-  const isSyncing = useAudiencesStore((s) => s.isSyncing);
   const { accessToken, user, permissions } = useAuthStore();
   const [loading, setLoading] = useState(true);
+  const [detail, setDetail] = useState<Audience | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState('');
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -59,17 +52,23 @@ export default function AudienceDetailPage({ params }: { params: Promise<{ id: s
   }, [user?.role, router]);
 
   useEffect(() => {
+    setDetail(null);
+  }, [id]);
+
+  useEffect(() => {
     if (isWaitingRoomRole(user?.role)) return;
-    if (audience) {
-      setLoading(false);
-      return;
-    }
     if (!accessToken) {
       setLoading(false);
       return;
     }
-    void fetchAudienceById(accessToken, id).finally(() => setLoading(false));
-  }, [id, audience, accessToken, fetchAudienceById, user?.role]);
+    void fetchAudienceById(accessToken, id, { force: true })
+      .then((fresh) => {
+        if (fresh) setDetail(fresh);
+      })
+      .finally(() => setLoading(false));
+  }, [id, accessToken, fetchAudienceById, user?.role]);
+
+  const displayAudience = detail ?? audience;
 
   if (isWaitingRoomRole(user?.role)) {
     return (
@@ -82,13 +81,14 @@ export default function AudienceDetailPage({ params }: { params: Promise<{ id: s
   }
 
   const handleValidation = async (decision: 'APPROUVE' | 'REJETE') => {
-    if (!accessToken || !audience) return;
+    if (!accessToken || !displayAudience) return;
 
     setActionError('');
     setActionLoading(true);
     try {
-      await validateAudienceApi(accessToken, audience.id, { decision });
-      upsertAudience({ ...audience, status: statusAfterValidation(decision) });
+      await validateAudienceApi(accessToken, displayAudience.id, { decision });
+      const refreshed = await fetchAudienceById(accessToken, displayAudience.id, { force: true });
+      if (refreshed) setDetail(refreshed);
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Action impossible');
     } finally {
@@ -97,13 +97,14 @@ export default function AudienceDetailPage({ params }: { params: Promise<{ id: s
   };
 
   const handleForwardToDircab = async () => {
-    if (!accessToken || !audience) return;
+    if (!accessToken || !displayAudience) return;
 
     setActionError('');
     setActionLoading(true);
     try {
-      const updated = await forwardToDircabApi(accessToken, audience.id);
-      upsertAudience(mapApiAudience(updated));
+      await forwardToDircabApi(accessToken, displayAudience.id);
+      const refreshed = await fetchAudienceById(accessToken, displayAudience.id, { force: true });
+      if (refreshed) setDetail(refreshed);
       setDircabDialogOpen(false);
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Transmission impossible');
@@ -112,18 +113,21 @@ export default function AudienceDetailPage({ params }: { params: Promise<{ id: s
     }
   };
 
-  const handleRescheduleSuccess = (updated: Audience) => {
-    if (audience) upsertAudience({ ...audience, ...updated });
+  const handleRescheduleSuccess = async () => {
+    if (accessToken) {
+      const refreshed = await fetchAudienceById(accessToken, id, { force: true });
+      if (refreshed) setDetail(refreshed);
+    }
   };
 
   const handleDelete = async () => {
-    if (!accessToken || !audience) return;
+    if (!accessToken || !displayAudience) return;
 
     setDeleteError('');
     setDeleting(true);
     try {
-      await deleteAudienceApi(accessToken, audience.id);
-      removeAudience(audience.id);
+      await deleteAudienceApi(accessToken, displayAudience.id);
+      removeAudience(displayAudience.id);
       setDeleteDialogOpen(false);
       router.push('/audiences');
     } catch (err) {
@@ -132,7 +136,7 @@ export default function AudienceDetailPage({ params }: { params: Promise<{ id: s
     }
   };
 
-  if (loading || isSyncing) {
+  if (loading) {
     return (
       <AuthGuard>
         <div className="p-8 flex justify-center">
@@ -142,7 +146,7 @@ export default function AudienceDetailPage({ params }: { params: Promise<{ id: s
     );
   }
 
-  if (!audience) {
+  if (!displayAudience) {
     return (
       <AuthGuard>
         <div className="p-8 text-center space-y-4">
@@ -153,8 +157,9 @@ export default function AudienceDetailPage({ params }: { params: Promise<{ id: s
     );
   }
 
-  const showActions = canValidate && ACTIONABLE_STATUSES.includes(audience.status);
-  const onlyRescheduleAllowed = audience.status === 'VALIDEE' || audience.status === 'PLANIFIEE';
+  const showActions = canValidate && ACTIONABLE_STATUSES.includes(displayAudience.status);
+  const onlyRescheduleAllowed = displayAudience.status === 'VALIDEE' || displayAudience.status === 'PLANIFIEE';
+  const historyEntries = sortStatusHistoryNewestFirst(displayAudience.statusHistory);
 
   return (
     <AuthGuard>
@@ -165,11 +170,11 @@ export default function AudienceDetailPage({ params }: { params: Promise<{ id: s
 
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <p className="font-mono text-military-400">{audience.reference}</p>
-            <h1 className="text-2xl font-bold mt-1">{audience.subject}</h1>
+            <p className="font-mono text-military-400">{displayAudience.reference}</p>
+            <h1 className="text-2xl font-bold mt-1">{displayAudience.subject}</h1>
             <div className="flex gap-2 mt-3">
-              <StatusBadge status={audience.status} />
-              <PriorityBadge priority={audience.priority} />
+              <StatusBadge status={displayAudience.status} />
+              <PriorityBadge priority={displayAudience.priority} />
             </div>
           </div>
           {showActions ? (
@@ -180,7 +185,7 @@ export default function AudienceDetailPage({ params }: { params: Promise<{ id: s
                     <CalendarClock className="w-4 h-4" /> Réprogrammer
                   </Button>
                 ) : null}
-                {audience.status === 'EN_ATTENTE' ? (
+                {displayAudience.status === 'EN_ATTENTE' ? (
                   <Button
                     variant="outline"
                     onClick={() => { setActionError(''); setDircabDialogOpen(true); }}
@@ -213,19 +218,19 @@ export default function AudienceDetailPage({ params }: { params: Promise<{ id: s
           <Card>
             <CardHeader><CardTitle>Détails</CardTitle></CardHeader>
             <dl className="space-y-3 text-sm">
-              <div><dt className="text-cream/40">Catégorie</dt><dd>{audience.category}</dd></div>
-              {audience.grade && (
-                <div><dt className="text-cream/40">Grade</dt><dd>{audience.grade}</dd></div>
+              <div><dt className="text-cream/40">Catégorie</dt><dd>{displayAudience.category}</dd></div>
+              {displayAudience.grade && (
+                <div><dt className="text-cream/40">Grade</dt><dd>{displayAudience.grade}</dd></div>
               )}
-              {audience.visitMode && (
-                <div><dt className="text-cream/40">Type de visite</dt><dd>{audience.visitMode === 'ACCOMPAGNE' ? 'Accompagné' : 'Individuel'}</dd></div>
+              {displayAudience.visitMode && (
+                <div><dt className="text-cream/40">Type de visite</dt><dd>{displayAudience.visitMode === 'ACCOMPAGNE' ? 'Accompagné' : 'Individuel'}</dd></div>
               )}
-              {audience.accompaniedPersons && audience.accompaniedPersons.length > 0 && (
+              {displayAudience.accompaniedPersons && displayAudience.accompaniedPersons.length > 0 && (
                 <div>
                   <dt className="text-cream/40">Personnes accompagnantes</dt>
                   <dd>
                     <ul className="mt-1 space-y-1">
-                      {normalizeAccompaniedPersons(audience.accompaniedPersons).map((person, i) => (
+                      {normalizeAccompaniedPersons(displayAudience.accompaniedPersons).map((person, i) => (
                         <li key={`${person.name}-${i}`} className="flex items-center gap-2 text-sm">
                           <span className="w-1.5 h-1.5 rounded-full bg-military-500 shrink-0" />
                           {person.grade && (
@@ -238,23 +243,24 @@ export default function AudienceDetailPage({ params }: { params: Promise<{ id: s
                   </dd>
                 </div>
               )}
-              <div><dt className="text-cream/40">Nom</dt><dd>{audience.requesterName}</dd></div>
-              <div><dt className="text-cream/40">Fonction</dt><dd>{audience.visitorFunction ?? audience.requesterOrg ?? '—'}</dd></div>
-              <div><dt className="text-cream/40">Objet</dt><dd>{audience.subject}</dd></div>
-              <div><dt className="text-cream/40">Priorité</dt><dd>{PRIORITY_LABELS[audience.priority]}</dd></div>
-              <div><dt className="text-cream/40">Confidentialité</dt><dd>{CONFIDENTIALITY_LABELS[audience.confidentiality]}</dd></div>
-              <div><dt className="text-cream/40">Créée le</dt><dd>{formatDate(audience.createdAt)}</dd></div>
-              {audience.scheduledAt && (
-                <div><dt className="text-cream/40">Planifiée le</dt><dd>{formatDate(audience.scheduledAt)}</dd></div>
+              <div><dt className="text-cream/40">Personne à voir</dt><dd>{displayAudience.visitTarget ? `${displayAudience.visitTarget.firstName} ${displayAudience.visitTarget.lastName}` : '—'}</dd></div>
+              <div><dt className="text-cream/40">Nom</dt><dd>{displayAudience.requesterName}</dd></div>
+              <div><dt className="text-cream/40">Fonction</dt><dd>{displayAudience.visitorFunction ?? displayAudience.requesterOrg ?? '—'}</dd></div>
+              <div><dt className="text-cream/40">Objet</dt><dd>{displayAudience.subject}</dd></div>
+              <div><dt className="text-cream/40">Priorité</dt><dd>{PRIORITY_LABELS[displayAudience.priority]}</dd></div>
+              <div><dt className="text-cream/40">Confidentialité</dt><dd>{CONFIDENTIALITY_LABELS[displayAudience.confidentiality]}</dd></div>
+              <div><dt className="text-cream/40">Créée le</dt><dd>{formatDate(displayAudience.createdAt)}</dd></div>
+              {displayAudience.scheduledAt && (
+                <div><dt className="text-cream/40">Planifiée le</dt><dd>{formatDate(displayAudience.scheduledAt)}</dd></div>
               )}
             </dl>
           </Card>
         </div>
 
-        {audience.visitors?.length ? (
+        {displayAudience.visitors?.length ? (
           <Card>
             <CardHeader><CardTitle>Visiteur(s)</CardTitle></CardHeader>
-            {audience.visitors.map(({ visitor }) => (
+            {displayAudience.visitors.map(({ visitor }) => (
               <div key={visitor.id} className="p-3 rounded-xl bg-carbon-800/50 mb-2">
                 <p className="font-medium">{visitor.firstName} {visitor.lastName}</p>
                 <p className="text-xs text-cream/40">{visitor.organization}</p>
@@ -265,24 +271,40 @@ export default function AudienceDetailPage({ params }: { params: Promise<{ id: s
 
         <Card>
           <CardHeader><CardTitle>Historique de validation</CardTitle></CardHeader>
-          <div className="space-y-3 pl-4 border-l border-military-700/30">
-            <div className="text-sm">
-              <p className="text-cream/40 text-xs">Création</p>
-              <p>Demande enregistrée — En attente</p>
+          {historyEntries.length ? (
+            <div className="space-y-4 pl-4 border-l border-military-700/30">
+              {historyEntries.map((entry, index) => {
+                const { title, detail: entryDetail } = describeStatusHistoryEntry(entry);
+                const actor = formatUserName(entry.changedByUser);
+                const isLatest = index === 0;
+                return (
+                  <div
+                    key={entry.id}
+                    className={`text-sm relative rounded-lg pr-3 py-2 -ml-1 ${
+                      isLatest ? 'bg-military-900/25 border border-military-700/40' : ''
+                    }`}
+                  >
+                    <span
+                      className={`absolute -left-[1.22rem] top-3 rounded-full ${
+                        isLatest ? 'w-2.5 h-2.5 bg-military-400 ring-2 ring-military-600/50' : 'w-2 h-2 bg-military-500'
+                      }`}
+                    />
+                    {isLatest ? (
+                      <p className="text-[10px] uppercase tracking-wider text-military-400 mb-1">
+                        Dernier enregistrement
+                      </p>
+                    ) : null}
+                    <p className="text-cream/40 text-xs">{formatDate(entry.createdAt)}</p>
+                    <p className="font-medium">{title}</p>
+                    {entryDetail ? <p className="text-cream/70">{entryDetail}</p> : null}
+                    {actor ? <p className="text-cream/40 text-xs mt-1">Par {actor}</p> : null}
+                  </div>
+                );
+              })}
             </div>
-            {audience.status === 'DEJA_ENVOYE' && (
-              <div className="text-sm">
-                <p className="text-cream/40 text-xs">Dircab</p>
-                <p>Transmise au Chef de cabinet — Déjà envoyé</p>
-              </div>
-            )}
-            {audience.status !== 'EN_ATTENTE' && audience.status !== 'DEJA_ENVOYE' && (
-              <div className="text-sm">
-                <p className="text-cream/40 text-xs">Analyse</p>
-                <p>Transmise au protocol</p>
-              </div>
-            )}
-          </div>
+          ) : (
+            <p className="text-sm text-cream/50">Aucun historique disponible.</p>
+          )}
         </Card>
 
         {canDelete && (
@@ -305,7 +327,7 @@ export default function AudienceDetailPage({ params }: { params: Promise<{ id: s
           <RescheduleAudienceModal
             open={rescheduleOpen}
             onOpenChange={setRescheduleOpen}
-            audience={audience}
+            audience={displayAudience}
             accessToken={accessToken ?? ''}
             onSuccess={handleRescheduleSuccess}
           />
@@ -343,15 +365,15 @@ export default function AudienceDetailPage({ params }: { params: Promise<{ id: s
           <div className="rounded-xl border border-red-900/30 bg-red-950/20 p-4 space-y-3">
             <div>
               <p className="text-[10px] uppercase tracking-wider text-cream/40">Référence</p>
-              <p className="font-mono text-sm text-red-300 mt-0.5">{audience.reference}</p>
+              <p className="font-mono text-sm text-red-300 mt-0.5">{displayAudience.reference}</p>
             </div>
             <div>
               <p className="text-[10px] uppercase tracking-wider text-cream/40">Objet</p>
-              <p className="text-sm text-cream mt-0.5">{audience.subject}</p>
+              <p className="text-sm text-cream mt-0.5">{displayAudience.subject}</p>
             </div>
             <div>
               <p className="text-[10px] uppercase tracking-wider text-cream/40">Demandeur</p>
-              <p className="text-sm text-cream/80 mt-0.5">{audience.requesterName}</p>
+              <p className="text-sm text-cream/80 mt-0.5">{displayAudience.requesterName}</p>
             </div>
             <div className="flex items-start gap-2 pt-1 text-xs text-red-300/80">
               <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />

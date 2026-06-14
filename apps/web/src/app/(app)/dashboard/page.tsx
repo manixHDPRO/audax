@@ -10,12 +10,13 @@ import {
   TrendingUp,
   ArrowRight,
   Activity,
+  Shield,
+  Users,
 } from 'lucide-react';
 import { AuthGuard } from '@/components/auth/auth-guard';
 import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { StatusBadge, PriorityBadge } from '@/components/ui/badge';
-import { MOCK_NOTIFICATIONS } from '@/lib/mock-data';
-import { formatDateShort } from '@/lib/utils';
+import { formatDateShort, cn } from '@/lib/utils';
 import { useAudiencesStore } from '@/stores/audiences-store';
 import type { Audience } from '@/types';
 
@@ -27,151 +28,285 @@ export default function DashboardPage() {
   const audiences = useAudiencesStore((s) => s.audiences);
 
   const statCards = [
-    { label: 'En attente', value: countByStatus(audiences, 'EN_ATTENTE'), icon: Clock, color: 'text-amber-400' },
-    { label: 'En analyse', value: countByStatus(audiences, 'EN_ANALYSE'), icon: Activity, color: 'text-blue-400' },
-    { label: 'Validées', value: countByStatus(audiences, 'VALIDEE'), icon: CheckCircle2, color: 'text-military-400' },
-    { label: 'Critiques', value: audiences.filter((a) => a.priority === 'CRITIQUE').length, icon: AlertTriangle, color: 'text-red-400' },
+    { label: 'En attente', value: countByStatus(audiences, 'EN_ATTENTE'), icon: Clock, color: 'text-amber-400', glow: false },
+    { label: 'En analyse', value: countByStatus(audiences, 'EN_ANALYSE'), icon: Activity, color: 'text-blue-400', glow: false },
+    { label: 'Validées', value: countByStatus(audiences, 'VALIDEE'), icon: CheckCircle2, color: 'text-military-400', glow: false },
+    { label: 'Critiques', value: audiences.filter((a) => a.priority === 'CRITIQUE').length, icon: AlertTriangle, color: 'text-red-400', glow: true },
   ];
 
-  const urgent = audiences.filter((a) => ['URGENTE', 'CRITIQUE'].includes(a.priority) && !['TERMINEE', 'REJETEE'].includes(a.status));
-  const today = audiences.filter((a) => a.scheduledAt);
+  const isToday = (dateStr?: string | null) => {
+    if (!dateStr) return false;
+    const d = new Date(dateStr);
+    const now = new Date();
+    return d.toLocaleDateString('fr-FR') === now.toLocaleDateString('fr-FR');
+  };
+
+  const operationTime = (aud: Audience) => new Date(aud.scheduledAt ?? aud.createdAt).getTime();
+
+  const displayAudiences = audiences;
+
+  const visibleAudiences = displayAudiences.filter((a) => ['EN_ATTENTE', 'PLANIFIEE'].includes(a.status));
+  const priority0 = visibleAudiences.filter((a) => a.priority === 'PRIORITE_0');
+  const otherAudiences = visibleAudiences.filter((a) => a.priority !== 'PRIORITE_0');
+
+  /** Opérations du jour : enregistrements et audiences reprogrammées pour aujourd'hui. */
+  const todayOperations = displayAudiences
+    .filter((a) => isToday(a.createdAt) || (a.scheduledAt && isToday(a.scheduledAt)))
+    .sort((a, b) => operationTime(a) - operationTime(b));
+
+  const today = displayAudiences.filter((a) => a.scheduledAt && isToday(a.scheduledAt));
 
   return (
     <AuthGuard>
-      <div className="p-4 lg:p-8 max-w-[1600px] mx-auto space-y-8">
-        <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
-          <h1 className="text-2xl lg:text-3xl font-bold text-cream">Dashboard exécutif</h1>
-          <p className="text-cream/50 mt-1">Vue synthétique — {new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(new Date())}</p>
+      <div className="p-4 lg:p-8 max-w-[1600px] mx-auto space-y-8 noise-overlay">
+        <motion.div
+          initial={{ opacity: 0, x: -20 }}
+          animate={{ opacity: 1, x: 0 }}
+          className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-l-4 border-military-600 pl-6 py-2"
+        >
+          <div>
+            <h1 className="text-3xl lg:text-4xl font-bold text-cream tracking-tight uppercase font-display">
+              Command <span className="text-military-500">Dashboard</span>
+            </h1>
+            <p className="text-military-400/60 mt-1 font-mono text-xs tracking-[0.2em] uppercase">
+              Système de Gestion Stratégique — Cabinet Chef EMG
+            </p>
+          </div>
+          <div className="text-right">
+            <p className="text-cream/40 font-mono text-xs uppercase tracking-wider">
+              {new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(new Date())}
+            </p>
+            <p className="text-military-500 font-mono text-[10px] mt-1">STATUS: OPERATIONNEL // SECURE_LINK: ACTIVE</p>
+          </div>
         </motion.div>
 
         {/* KPI Grid */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
           {statCards.map((stat, i) => (
             <motion.div
               key={stat.label}
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.08 }}
+              transition={{ delay: i * 0.1 }}
             >
-              <Card glow={stat.label === 'Critiques'} className="relative overflow-hidden">
+              <Card
+                glow={stat.glow}
+                tactical
+                className="relative group hover:border-military-500/50 transition-all duration-500"
+              >
                 <div className="flex items-start justify-between">
                   <div>
-                    <p className="text-xs text-cream/40 uppercase tracking-wider">{stat.label}</p>
-                    <p className="text-3xl font-bold mt-2 text-cream">{stat.value}</p>
+                    <p className="text-[10px] text-military-500 uppercase tracking-[0.2em] font-mono font-bold">{stat.label}</p>
+                    <p className="text-4xl font-bold mt-2 text-cream font-display tracking-tighter">{stat.value}</p>
                   </div>
-                  <div className={`p-2 rounded-lg bg-carbon-800 ${stat.color}`}>
-                    <stat.icon className="w-5 h-5" />
+                  <div className={cn(
+                    "p-3 rounded-xl bg-carbon-800/50 border border-military-800/50 group-hover:border-military-500/30 transition-colors",
+                    stat.color
+                  )}>
+                    <stat.icon className="w-6 h-6" />
                   </div>
                 </div>
-                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-military-600/30 to-transparent" />
+                <div className="mt-4 flex items-center gap-2">
+                  <div className="h-1 flex-1 bg-carbon-800 rounded-full overflow-hidden">
+                    <motion.div
+                      initial={{ width: 0 }}
+                      animate={{ width: '65%' }}
+                      transition={{ duration: 1, delay: 0.5 + i * 0.1 }}
+                      className={cn("h-full bg-current opacity-50", stat.color)}
+                    />
+                  </div>
+                  <span className="text-[10px] font-mono text-cream/20">LIVE</span>
+                </div>
               </Card>
             </motion.div>
           ))}
         </div>
 
-        <div className="grid lg:grid-cols-3 gap-6">
-          {/* Urgent list */}
-          <motion.div className="lg:col-span-2" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }}>
-            <Card>
-              <CardHeader className="flex-row items-center justify-between">
+        <div className="grid lg:grid-cols-3 gap-8">
+          {/* Tactical Priorities - Split into Priority 0 and Others */}
+          <motion.div className="lg:col-span-2" initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.3 }}>
+            <Card tactical scanlines className="h-full flex flex-col">
+              <CardHeader className="flex-row items-center justify-between border-b border-military-800/50 pb-4 mb-6">
                 <div>
-                  <CardTitle>Demandes prioritaires</CardTitle>
-                  <CardDescription>Audiences urgentes et critiques en cours</CardDescription>
+                  <CardTitle className="text-xl flex items-center gap-3">
+                    <div className="w-2 h-6 bg-military-500 rounded-full animate-pulse" />
+                    Audiences en Attente / Réprogrammées
+                  </CardTitle>
+                  <CardDescription className="font-mono text-[10px] uppercase tracking-wider mt-1">
+                    Supervision des dossiers prioritaires et planifiés
+                  </CardDescription>
                 </div>
-                <Link href="/audiences" className="text-xs text-military-400 hover:text-military-300 flex items-center gap-1">
-                  Voir tout <ArrowRight className="w-3 h-3" />
+                <Link href="/audiences" className="px-4 py-2 rounded-lg glass border-military-700/30 text-[10px] font-bold text-military-400 hover:text-military-300 hover:border-military-500 transition-all uppercase tracking-widest flex items-center gap-2">
+                  Tout voir <ArrowRight className="w-3 h-3" />
                 </Link>
               </CardHeader>
-              <div className="space-y-3">
-                {urgent.length ? urgent.map((aud) => (
-                  <Link
-                    key={aud.id}
-                    href={`/audiences/${aud.id}`}
-                    className="flex items-center gap-4 p-3 rounded-xl bg-carbon-800/50 hover:bg-carbon-800 border border-transparent hover:border-military-700/30 transition-all group"
-                  >
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="text-xs font-mono text-military-400">{aud.reference}</span>
-                        <PriorityBadge priority={aud.priority} />
+              
+              <div className="grid md:grid-cols-2 gap-8 flex-1">
+                {/* Column 1: Priority 0 */}
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 mb-4">
+                    <div className="w-1.5 h-1.5 rounded-full bg-gold-500" />
+                    <h3 className="text-xs font-mono font-bold text-gold-500 uppercase tracking-[0.2em]">Priorité 0</h3>
+                  </div>
+                  <div className="space-y-3">
+                    {priority0.length ? priority0.map((aud) => (
+                      <Link
+                        key={aud.id}
+                        href={`/audiences/${aud.id}`}
+                        className="flex flex-col p-4 rounded-xl bg-gold-500/5 hover:bg-gold-500/10 border border-gold-500/20 hover:border-gold-500/40 transition-all group relative overflow-hidden"
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-[10px] font-mono text-gold-500 bg-gold-950/50 px-2 py-0.5 rounded border border-gold-500/30">{aud.reference}</span>
+                          <StatusBadge status={aud.status} className="scale-75 origin-right" />
+                        </div>
+                        <p className="text-sm font-bold text-cream group-hover:text-white transition-colors line-clamp-1">{aud.subject}</p>
+                        <div className="flex items-center justify-between mt-3">
+                          <p className="text-[10px] text-cream/40 flex items-center gap-1.5">
+                            <Users className="w-3 h-3" /> {aud.requesterName}
+                          </p>
+                          <p className="text-[10px] text-cream/40 font-mono italic">
+                            {formatDateShort(aud.createdAt)}
+                          </p>
+                        </div>
+                      </Link>
+                    )) : (
+                      <div className="py-8 text-center border border-dashed border-military-800/30 rounded-xl opacity-20">
+                        <p className="text-[10px] font-mono uppercase tracking-widest">Aucun dossier P0</p>
                       </div>
-                      <p className="text-sm font-medium text-cream truncate">{aud.subject}</p>
-                      <p className="text-xs text-cream/40">{aud.requesterName}</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Column 2: Others */}
+                <div className="space-y-4 border-l border-military-800/30 pl-8">
+                  <div className="flex items-center gap-2 mb-4">
+                    <div className="w-1.5 h-1.5 rounded-full bg-military-500" />
+                    <h3 className="text-xs font-mono font-bold text-military-500 uppercase tracking-[0.2em]">Autres Audiences</h3>
+                  </div>
+                  <div className="space-y-3">
+                    {otherAudiences.length ? otherAudiences.map((aud) => (
+                      <Link
+                        key={aud.id}
+                        href={`/audiences/${aud.id}`}
+                        className="flex flex-col p-4 rounded-xl bg-carbon-800/30 hover:bg-military-900/20 border border-military-800/30 hover:border-military-600/50 transition-all group"
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-[10px] font-mono text-military-500 bg-military-950 px-2 py-0.5 rounded border border-military-800/50">{aud.reference}</span>
+                          <div className="flex items-center gap-2">
+                            <PriorityBadge priority={aud.priority} className="scale-75 origin-right" />
+                            <StatusBadge status={aud.status} className="scale-75 origin-right" />
+                          </div>
+                        </div>
+                        <p className="text-sm font-medium text-cream group-hover:text-white transition-colors line-clamp-1">{aud.subject}</p>
+                        <div className="flex items-center justify-between mt-3">
+                          <p className="text-[10px] text-cream/40 flex items-center gap-1.5">
+                            <Users className="w-3 h-3" /> {aud.requesterName}
+                          </p>
+                          <p className="text-[10px] text-cream/40 font-mono italic">
+                            {formatDateShort(aud.createdAt)}
+                          </p>
+                        </div>
+                      </Link>
+                    )) : (
+                      <div className="py-8 text-center border border-dashed border-military-800/30 rounded-xl opacity-20">
+                        <p className="text-[10px] font-mono uppercase tracking-widest">Aucun autre dossier</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </Card>
+          </motion.div>
+
+          {/* Timeline des opérations */}
+          <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.4 }}>
+            <Card tactical glow className="h-full flex flex-col">
+              <CardHeader className="border-b border-military-800/50 pb-4 mb-6">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <TrendingUp className="w-5 h-5 text-military-500" />
+                  Timeline des Opérations
+                </CardTitle>
+                <CardDescription className="font-mono text-[10px] uppercase tracking-wider">
+                  Aujourd&apos;hui // {todayOperations.length} événements
+                </CardDescription>
+              </CardHeader>
+              <div className="relative pl-8 space-y-6 flex-1 overflow-auto max-h-[500px] pr-2 before:absolute before:left-[11px] before:top-2 before:bottom-2 before:w-0.5 before:bg-gradient-to-b before:from-military-600 before:via-military-800 before:to-transparent">
+                {todayOperations.length ? todayOperations.map((item, i) => (
+                  <motion.div
+                    key={item.id}
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: 0.5 + i * 0.05 }}
+                    className="relative group"
+                  >
+                    <div className="absolute -left-[29px] top-1 w-5 h-5 rounded-full bg-carbon-950 border-2 border-military-600 flex items-center justify-center z-10 group-hover:border-gold-500 transition-colors">
+                      <div className="w-2 h-2 rounded-full bg-military-500 group-hover:bg-gold-500 animate-pulse" />
                     </div>
-                    <StatusBadge status={aud.status} />
-                  </Link>
+                    <Link
+                      href={`/audiences/${item.id}`}
+                      className="block bg-carbon-800/30 p-4 rounded-xl border border-military-800/20 group-hover:border-military-700/50 transition-all"
+                    >
+                      <div className="flex justify-between items-start mb-2">
+                        <p className="text-sm font-bold text-cream group-hover:text-military-300 transition-colors line-clamp-1">{item.subject}</p>
+                        <span className="text-[10px] font-mono text-gold-500 font-bold shrink-0 ml-2">
+                          {new Date(item.scheduledAt ?? item.createdAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs text-military-400 font-mono tracking-wider">{item.reference}</p>
+                        <div className="flex items-center gap-2">
+                          {!item.scheduledAt && isToday(item.createdAt) ? (
+                            <span className="text-[9px] uppercase tracking-wider text-cream/40">Enregistré</span>
+                          ) : null}
+                          <StatusBadge status={item.status} className="scale-75 origin-right" />
+                        </div>
+                      </div>
+                    </Link>
+                  </motion.div>
                 )) : (
-                  <p className="text-sm text-cream/40 py-4 text-center">Aucune demande prioritaire</p>
+                  <div className="py-12 text-center border border-dashed border-military-900/30 rounded-2xl opacity-20">
+                    <p className="text-xs font-mono uppercase tracking-[0.2em]">Aucune opération aujourd&apos;hui</p>
+                  </div>
                 )}
               </div>
             </Card>
           </motion.div>
-
-          {/* Notifications feed */}
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.4 }}>
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <TrendingUp className="w-4 h-4 text-military-400" />
-                  Activité live
-                </CardTitle>
-              </CardHeader>
-              <div className="space-y-3">
-                {MOCK_NOTIFICATIONS.map((n) => (
-                  <div key={n.id} className={`p-3 rounded-xl border ${n.isRead ? 'bg-carbon-900/50 border-carbon-800' : 'bg-military-900/20 border-military-700/30'}`}>
-                    <p className="text-sm font-medium text-cream">{n.title}</p>
-                    <p className="text-xs text-cream/40 mt-1">{n.message}</p>
-                  </div>
-                ))}
-              </div>
-            </Card>
-          </motion.div>
         </div>
 
-        {/* Mini calendar + today */}
-        <div className="grid lg:grid-cols-2 gap-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Calendar className="w-4 h-4 text-gold-400" />
-                Audiences planifiées
+        {/* Planification */}
+        <Card tactical scanlines>
+            <CardHeader className="flex-row items-center justify-between border-b border-military-800/50 pb-4 mb-6">
+              <CardTitle className="flex items-center gap-3 text-lg">
+                <Calendar className="w-5 h-5 text-gold-400" />
+                Planification Stratégique
               </CardTitle>
+              <span className="text-[10px] font-mono text-military-500">J-0 // {today.length} ENGAGEMENTS</span>
             </CardHeader>
-            <div className="space-y-2">
+            <div className="grid gap-4">
               {today.length ? today.map((a) => (
-                <div key={a.id} className="flex items-center gap-3 p-3 rounded-lg bg-carbon-800/40">
-                  <div className="text-center px-3 py-2 rounded-lg bg-military-900/50 border border-military-700/30">
-                    <p className="text-xs text-cream/40">Date</p>
-                    <p className="text-sm font-bold text-gold-400">{formatDateShort(a.scheduledAt)}</p>
+                <div key={a.id} className="flex items-center gap-4 p-4 rounded-xl bg-carbon-800/40 border border-military-800/30 group hover:border-military-600/50 transition-all">
+                  <div className="text-center min-w-[80px] px-3 py-3 rounded-xl bg-military-950 border border-military-800/50 group-hover:border-gold-500/30 transition-colors">
+                    <p className="text-[10px] text-military-500 font-mono uppercase tracking-tighter">Heure</p>
+                    <p className="text-lg font-bold text-gold-400 font-display">{formatDateShort(a.scheduledAt)}</p>
                   </div>
-                  <div>
-                    <p className="text-sm font-medium">{a.subject}</p>
-                    <p className="text-xs text-cream/40">{a.room?.name ?? 'Salle à confirmer'}</p>
+                  <div className="flex-1">
+                    <p className="text-base font-medium text-cream">{a.subject}</p>
+                    <div className="flex items-center gap-3 mt-1">
+                      <p className="text-xs text-military-500 flex items-center gap-1.5">
+                        <Shield className="w-3 h-3" /> {a.room?.name ?? 'Zone à confirmer'}
+                      </p>
+                      <div className="w-1 h-1 rounded-full bg-military-800" />
+                      <p className="text-xs text-cream/40 uppercase tracking-widest font-mono text-[10px]">{a.confidentiality}</p>
+                    </div>
                   </div>
                 </div>
               )) : (
-                <p className="text-sm text-cream/40">Aucune audience planifiée aujourd&apos;hui</p>
-              )}
-            </div>
-          </Card>
-
-          <Card glow>
-            <CardHeader>
-              <CardTitle>Timeline récente</CardTitle>
-            </CardHeader>
-            <div className="relative pl-6 space-y-4 before:absolute before:left-[7px] before:top-2 before:bottom-2 before:w-px before:bg-military-700/30">
-              {audiences.slice(0, 3).length ? audiences.slice(0, 3).map((item) => (
-                <div key={item.id} className="relative">
-                  <div className="absolute -left-6 top-1.5 w-3 h-3 rounded-full bg-military-600 border-2 border-carbon-900" />
-                  <p className="text-sm text-cream">{item.subject}</p>
-                  <p className="text-xs text-military-400 font-mono">{item.reference}</p>
-                  <p className="text-[10px] text-cream/30 mt-0.5">{formatDateShort(item.createdAt)}</p>
+                <div className="py-12 text-center border-2 border-dashed border-military-900/50 rounded-2xl">
+                  <p className="text-sm text-cream/20 font-mono uppercase tracking-[0.2em]">Aucun engagement planifié</p>
                 </div>
-              )) : (
-                <p className="text-sm text-cream/40">Aucune activité récente</p>
               )}
             </div>
           </Card>
-        </div>
       </div>
     </AuthGuard>
   );

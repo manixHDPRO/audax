@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useRouter } from 'next/navigation';
-import { useAuthStore, canAccessCommandCenter, canViewAudit, canCreateAudience, isWaitingRoomRole } from '@/stores/auth-store';
+import { useAuthStore, canAccessCommandCenter, canViewAudit, canCreateAudience, isWaitingRoomRole, receivesLiveAudienceUpdates } from '@/stores/auth-store';
 import { useAudiencesStore } from '@/stores/audiences-store';
 import { isApiConfigured } from '@/lib/api-config';
 import { ROLE_LABELS } from '@/types';
@@ -177,7 +177,6 @@ function OrbitalMenu({
                 );
               })}
 
-              {/* Center hub */}
               <motion.div
                 initial={{ scale: 0 }}
                 animate={{ scale: 1 }}
@@ -186,6 +185,7 @@ function OrbitalMenu({
               >
                 <button
                   onClick={onClose}
+                  aria-label="Fermer le menu"
                   className="w-16 h-16 rounded-full bg-gradient-to-br from-military-700 to-military-900 border-2 border-military-500 flex items-center justify-center glow-green cursor-pointer"
                 >
                   <Hexagon className="w-7 h-7 text-gold-400" />
@@ -202,14 +202,17 @@ function OrbitalMenu({
 /* ─── Sidebar rail (desktop) ─── */
 function SidebarRail({ items, activePath }: { items: NavItem[]; activePath: string }) {
   return (
-    <aside className="hidden lg:flex flex-col w-[72px] glass-strong border-r border-military-800/30 py-6 items-center gap-2 shrink-0">
-      <Link href="/dashboard" className="mb-4 group">
-        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-military-600 to-military-800 flex items-center justify-center glow-green group-hover:scale-105 transition-transform">
-          <Hexagon className="w-5 h-5 text-gold-400" />
+    <aside className="hidden lg:flex fixed left-0 top-0 z-30 h-screen flex-col w-[80px] glass-strong border-r border-military-800/30 py-8 items-center gap-4 shrink-0 overflow-hidden">
+      <div className="absolute inset-0 bg-gradient-to-b from-military-900/20 to-transparent pointer-events-none" />
+      
+      <Link href="/dashboard" className="mb-6 group relative">
+        <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-military-600 to-military-900 flex items-center justify-center glow-green group-hover:scale-110 transition-all duration-500 border border-military-500/30">
+          <Hexagon className="w-6 h-6 text-gold-400" />
         </div>
+        <div className="absolute -inset-2 bg-gold-500/5 rounded-full blur-xl opacity-0 group-hover:opacity-100 transition-opacity" />
       </Link>
 
-      <nav className="flex flex-col gap-1 flex-1">
+      <nav className="flex flex-col gap-2 flex-1 relative z-10">
         {items.map((item) => {
           const Icon = item.icon;
           const isActive = activePath.startsWith(item.href);
@@ -219,20 +222,20 @@ function SidebarRail({ items, activePath }: { items: NavItem[]; activePath: stri
               href={item.href}
               title={item.label}
               className={cn(
-                'relative w-11 h-11 rounded-xl flex items-center justify-center transition-all duration-200 group',
+                'relative w-12 h-12 rounded-2xl flex items-center justify-center transition-all duration-300 group',
                 isActive
-                  ? 'bg-military-700 text-gold-400 glow-green'
-                  : 'text-cream/40 hover:text-cream hover:bg-carbon-700',
+                  ? 'bg-military-700/50 text-gold-400 glow-green border border-military-500/30'
+                  : 'text-cream/30 hover:text-military-400 hover:bg-military-900/30 border border-transparent hover:border-military-800/50',
               )}
             >
-              <Icon className="w-5 h-5" />
+              <Icon className={cn("w-5 h-5", isActive && "animate-pulse")} />
               {isActive && (
                 <motion.div
                   layoutId="sidebar-indicator"
-                  className="absolute -left-[13px] w-1 h-6 bg-gold-500 rounded-r-full"
+                  className="absolute -left-[14px] w-1.5 h-8 bg-gold-500 rounded-r-full shadow-[0_0_10px_rgba(201,162,39,0.5)]"
                 />
               )}
-              <span className="absolute left-full ml-3 px-2 py-1 rounded-md glass text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50">
+              <span className="absolute left-full ml-4 px-3 py-1.5 rounded-lg glass-strong text-[10px] font-bold uppercase tracking-[0.2em] whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-all duration-300 translate-x-[-10px] group-hover:translate-x-0 z-50 border border-military-700/30">
                 {item.label}
               </span>
             </Link>
@@ -248,42 +251,66 @@ function TopBar({ onOpenOrbital }: { onOpenOrbital: () => void }) {
   const { user, logout } = useAuthStore();
 
   return (
-    <header className="h-16 glass-strong border-b border-military-800/30 flex items-center justify-between px-4 lg:px-6 shrink-0">
-      <div className="flex items-center gap-4">
+    <header className="sticky top-0 z-20 h-20 glass-strong border-b border-military-800/30 flex items-center justify-between px-6 lg:px-10 shrink-0">
+      <div className="flex items-center gap-6">
         <button
           onClick={onOpenOrbital}
-          className="lg:hidden w-10 h-10 rounded-xl glass flex items-center justify-center hover:glow-green transition-all cursor-pointer"
+          aria-label="Ouvrir le menu"
+          className="lg:hidden w-12 h-12 rounded-2xl glass flex items-center justify-center hover:glow-green transition-all cursor-pointer border border-military-800/50"
         >
-          <Menu className="w-5 h-5 text-military-400" />
+          <Menu className="w-6 h-6 text-military-400" />
         </button>
-        <div>
-          <h1 className="text-sm font-bold tracking-[0.2em] text-military-400 uppercase">AUDAX</h1>
-          <p className="text-[10px] text-cream/40 tracking-wider hidden sm:block">Cabinet Chef EMG — FARDC</p>
+        <div className="flex flex-col">
+          <div className="flex items-center gap-3">
+            <div className="w-1.5 h-4 bg-military-500 rounded-full" />
+            <h1 className="text-lg font-black tracking-[0.3em] text-cream uppercase font-display">AUDAX</h1>
+          </div>
+          <p className="text-[10px] text-military-500 font-mono tracking-[0.2em] uppercase mt-0.5 ml-4 hidden sm:block">
+            Command & Control Interface
+          </p>
         </div>
       </div>
 
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-6">
+        <div className="hidden xl:flex items-center gap-8 mr-8">
+          <div className="flex flex-col items-end">
+            <span className="text-[9px] font-mono text-military-500 uppercase tracking-widest">System Time</span>
+            <span className="text-xs font-mono text-cream/60">12:44:32 UTC</span>
+          </div>
+          <div className="flex flex-col items-end">
+            <span className="text-[9px] font-mono text-military-500 uppercase tracking-widest">Network</span>
+            <span className="text-xs font-mono text-military-400">ENCRYPTED</span>
+          </div>
+        </div>
+
         <Link
           href="/notifications"
-          className="relative w-10 h-10 rounded-xl glass flex items-center justify-center hover:glow-green transition-all"
+          className="relative w-11 h-11 rounded-2xl glass flex items-center justify-center hover:glow-green transition-all border border-military-800/50 group"
         >
-          <Bell className="w-4 h-4 text-cream/60" />
-          <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-red-500 text-[10px] flex items-center justify-center font-bold">2</span>
+          <Bell className="w-5 h-5 text-cream/40 group-hover:text-military-400 transition-colors" />
+          <span className="absolute -top-1 -right-1 w-5 h-5 rounded-lg bg-red-600 text-[10px] flex items-center justify-center font-bold border-2 border-carbon-950 shadow-[0_0_10px_rgba(220,38,38,0.5)]">2</span>
         </Link>
 
-        <Link href="/profile" className="flex items-center gap-3 glass rounded-xl px-3 py-2 hover:border-military-600 transition-colors">
-          <div className="w-8 h-8 rounded-lg bg-military-700 flex items-center justify-center text-xs font-bold text-gold-400">
-            {user?.firstName?.[0]}{user?.lastName?.[0]}
+        <Link href="/profile" className="flex items-center gap-4 glass rounded-2xl px-4 py-2 hover:border-military-600 transition-all duration-300 group border border-military-800/30">
+          <div className="relative">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-military-700 to-military-900 flex items-center justify-center text-sm font-bold text-gold-400 border border-military-500/30 group-hover:glow-green transition-all">
+              {user?.firstName?.[0]}{user?.lastName?.[0]}
+            </div>
+            <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-green-500 border-2 border-carbon-950" />
           </div>
           <div className="hidden md:block text-left">
-            <p className="text-sm font-medium text-cream">{user?.firstName} {user?.lastName}</p>
-            <p className="text-[10px] text-cream/40">{user?.role && ROLE_LABELS[user.role]}</p>
+            <p className="text-sm font-bold text-cream group-hover:text-military-300 transition-colors">{user?.firstName} {user?.lastName}</p>
+            <p className="text-[10px] text-military-500 font-mono uppercase tracking-wider">{user?.role && ROLE_LABELS[user.role]}</p>
           </div>
-          <ChevronRight className="w-4 h-4 text-cream/30 hidden md:block" />
+          <ChevronRight className="w-4 h-4 text-cream/20 group-hover:text-military-500 transition-colors hidden md:block" />
         </Link>
 
-        <button onClick={() => void logout()} className="text-xs text-cream/40 hover:text-red-400 transition-colors cursor-pointer px-2">
-          Déconnexion
+        <button 
+          onClick={() => void logout()} 
+          className="w-11 h-11 rounded-2xl glass flex items-center justify-center hover:bg-red-900/20 hover:border-red-500/50 transition-all group border border-military-800/30 cursor-pointer"
+          title="Déconnexion"
+        >
+          <X className="w-5 h-5 text-cream/20 group-hover:text-red-500 transition-colors" />
         </button>
       </div>
     </header>
@@ -381,6 +408,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [isAuthenticated, accessToken, user?.role, syncFromApi, syncWaitingRoomToday]);
 
   useEffect(() => {
+    if (!isAuthenticated || !accessToken || !isApiConfigured()) return;
+    if (!receivesLiveAudienceUpdates(user?.role)) return;
+
+    const interval = setInterval(() => {
+      void syncFromApi(accessToken, { silent: true });
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [isAuthenticated, accessToken, user?.role, syncFromApi]);
+
+  useEffect(() => {
     if (!isAuthenticated) clearAllAudiences();
   }, [isAuthenticated, clearAllAudiences]);
 
@@ -389,13 +427,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const items = filterNav(user?.role, permissions);
 
   return (
-    <div className="min-h-screen flex bg-carbon-950 bg-command-grid">
+    <div className="h-screen flex overflow-hidden bg-carbon-950 bg-command-grid">
       {isAuthenticated && <SidebarRail items={items} activePath={pathname} />}
 
-      <div className="flex-1 flex flex-col min-h-screen">
+      <div className={cn('flex-1 flex flex-col min-h-0 min-w-0', isAuthenticated && 'lg:ml-[80px]')}>
         {isAuthenticated && <TopBar onOpenOrbital={() => setOrbitalOpen(true)} />}
 
-        <main className={cn('flex-1 overflow-auto', isAuthenticated && 'pb-28')}>
+        <main className={cn('flex-1 min-h-0 overflow-y-auto', isAuthenticated && 'pb-28')}>
           {children}
         </main>
 

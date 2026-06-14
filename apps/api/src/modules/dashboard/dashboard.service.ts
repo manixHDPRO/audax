@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
-import { priorite0ExcludeWhere } from '../../common/priorite0-access';
+import { audienceListWhereForRole } from '../../common/audience-role-access';
 
 @Injectable()
 export class DashboardService {
@@ -12,7 +12,7 @@ export class DashboardService {
     today.setHours(0, 0, 0, 0);
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
-    const scope = priorite0ExcludeWhere(role);
+    const scope = audienceListWhereForRole(role);
 
     const [stats, todayAudiences, urgent, rooms] = await Promise.all([
       this.getStats(role),
@@ -43,7 +43,7 @@ export class DashboardService {
   }
 
   private async getStats(role: UserRole) {
-    const scope = priorite0ExcludeWhere(role);
+    const scope = audienceListWhereForRole(role);
     const statuses = ['EN_ATTENTE', 'EN_ANALYSE', 'VALIDEE', 'REJETEE', 'PLANIFIEE', 'TERMINEE'] as const;
     const counts = await Promise.all(
       statuses.map((s) => this.prisma.audience.count({ where: { ...scope, status: s } })),
@@ -52,7 +52,7 @@ export class DashboardService {
   }
 
   async getRecentActivity(role: UserRole) {
-    const scope = priorite0ExcludeWhere(role);
+    const scope = audienceListWhereForRole(role);
     return this.prisma.audienceStatusHistory.findMany({
       where: { audience: scope },
       take: 20,

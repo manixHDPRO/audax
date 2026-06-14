@@ -43,6 +43,28 @@ export interface User {
   permissions?: string[];
 }
 
+export type ValidationDecision = 'APPROUVE' | 'REJETE' | 'EN_ATTENTE';
+
+export interface AudienceValidationEntry {
+  id: string;
+  decision: ValidationDecision;
+  comment?: string | null;
+  level: number;
+  decidedAt?: string | null;
+  createdAt: string;
+  validator: { firstName: string; lastName: string };
+}
+
+export interface AudienceStatusHistoryEntry {
+  id: string;
+  fromStatus?: AudienceStatus | null;
+  toStatus: AudienceStatus;
+  comment?: string | null;
+  changedBy: string;
+  createdAt: string;
+  changedByUser?: { firstName: string; lastName: string };
+}
+
 export interface Audience {
   id: string;
   reference: string;
@@ -63,6 +85,9 @@ export interface Audience {
   visitors?: { visitor: Visitor }[];
   room?: Room;
   createdBy?: { firstName: string; lastName: string };
+  visitTarget?: { id: string; firstName: string; lastName: string; role?: UserRole };
+  statusHistory?: AudienceStatusHistoryEntry[];
+  validations?: AudienceValidationEntry[];
 }
 
 export interface Visitor {
@@ -104,6 +129,12 @@ export interface AuditLog {
   createdAt: string;
   user?: { firstName: string; lastName: string; email: string };
 }
+
+export const VALIDATION_DECISION_LABELS: Record<ValidationDecision, string> = {
+  APPROUVE: 'Approuvée',
+  REJETE: 'Rejetée',
+  EN_ATTENTE: 'Transmise',
+};
 
 export const STATUS_LABELS: Record<AudienceStatus, string> = {
   EN_ATTENTE: 'En attente',

@@ -222,6 +222,11 @@ export function canFilterAudiencesByPriority(role?: string) {
   return role === 'PROTOCOL' || role === 'ADMIN';
 }
 
+/** Protocol, Admin et Dircab : rafraîchissement live des audiences qui leur sont adressées. */
+export function receivesLiveAudienceUpdates(role?: string) {
+  return role === 'PROTOCOL' || role === 'ADMIN' || role === 'CHEF';
+}
+
 export function getDefaultAppRoute(role?: string) {
   return isWaitingRoomRole(role) ? '/audiences' : '/dashboard';
 }

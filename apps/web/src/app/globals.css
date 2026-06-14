@@ -1,25 +1,35 @@
 @import "tailwindcss";
 
 @theme {
-  --color-military-950: #0a0f0a;
+  --color-military-950: #080c08;
   --color-military-900: #0f1a0f;
   --color-military-800: #1a2e1a;
   --color-military-700: #2d4a2d;
   --color-military-600: #3d6b3d;
   --color-military-500: #4a7c4a;
   --color-military-400: #6b9f6b;
+  --color-military-300: #8cb88c;
+  --color-military-200: #add1ad;
+  --color-military-100: #cee6ce;
+  --color-military-50: #eff7ef;
+
   --color-carbon-950: #050505;
   --color-carbon-900: #0a0a0a;
   --color-carbon-800: #121212;
   --color-carbon-700: #1a1a1a;
   --color-carbon-600: #242424;
   --color-carbon-500: #2e2e2e;
+
   --color-gold-500: #c9a227;
   --color-gold-400: #d4b545;
   --color-gold-300: #e5cc6a;
+  --color-gold-200: #f0e1a1;
+  --color-gold-100: #f9f3d6;
+
   --color-cream: #f5f3eb;
   --font-sans: "Segoe UI", system-ui, -apple-system, sans-serif;
   --font-display: "Segoe UI", system-ui, sans-serif;
+  --font-mono: "Cascadia Code", "Fira Code", monospace;
 }
 
 * {
@@ -40,53 +50,77 @@ body {
 
 .bg-command-grid {
   background-image:
-    linear-gradient(rgba(74, 124, 74, 0.03) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(74, 124, 74, 0.03) 1px, transparent 1px);
-  background-size: 48px 48px;
+    linear-gradient(rgba(74, 124, 74, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(74, 124, 74, 0.05) 1px, transparent 1px);
+  background-size: 40px 40px;
 }
 
 .glow-green {
-  box-shadow: 0 0 20px rgba(74, 124, 74, 0.15), 0 0 40px rgba(74, 124, 74, 0.05);
+  box-shadow: 0 0 20px rgba(74, 124, 74, 0.2), 0 0 40px rgba(74, 124, 74, 0.1);
+}
+
+.glow-green-strong {
+  box-shadow: 0 0 30px rgba(74, 124, 74, 0.3), 0 0 60px rgba(74, 124, 74, 0.15);
 }
 
 .glow-gold {
-  box-shadow: 0 0 20px rgba(201, 162, 39, 0.2), 0 0 40px rgba(201, 162, 39, 0.08);
+  box-shadow: 0 0 20px rgba(201, 162, 39, 0.25), 0 0 40px rgba(201, 162, 39, 0.1);
 }
 
 .glow-critical {
-  box-shadow: 0 0 24px rgba(239, 68, 68, 0.25);
+  box-shadow: 0 0 24px rgba(239, 68, 68, 0.3);
   animation: pulse-glow 2s ease-in-out infinite;
 }
 
 @keyframes pulse-glow {
   0%, 100% { box-shadow: 0 0 20px rgba(239, 68, 68, 0.2); }
-  50% { box-shadow: 0 0 32px rgba(239, 68, 68, 0.4); }
+  50% { box-shadow: 0 0 32px rgba(239, 68, 68, 0.5); }
 }
 
 .glass {
-  background: rgba(18, 18, 18, 0.72);
-  backdrop-filter: blur(16px);
-  border: 1px solid rgba(74, 124, 74, 0.12);
+  background: rgba(18, 18, 18, 0.65);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(74, 124, 74, 0.15);
 }
 
 .glass-strong {
-  background: rgba(10, 15, 10, 0.88);
-  backdrop-filter: blur(24px);
-  border: 1px solid rgba(74, 124, 74, 0.18);
+  background: rgba(10, 15, 10, 0.85);
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(74, 124, 74, 0.2);
 }
 
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+.tactical-corners {
+  position: relative;
 }
 
-::-webkit-scrollbar-track {
-  background: var(--color-carbon-900);
+.tactical-corners::before,
+.tactical-corners::after {
+  content: "";
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  pointer-events: none;
 }
 
-::-webkit-scrollbar-thumb {
-  background: var(--color-military-700);
-  border-radius: 3px;
+.tactical-corners::before {
+  top: -1px;
+  left: -1px;
+  border-top: 2px solid var(--color-military-500);
+  border-left: 2px solid var(--color-military-500);
+}
+
+.tactical-corners::after {
+  bottom: -1px;
+  right: -1px;
+  border-bottom: 2px solid var(--color-military-500);
+  border-right: 2px solid var(--color-military-500);
+}
+
+.scanlines {
+  position: relative;
+  overflow: hidden;
 }
 
 .scanlines::after {
@@ -96,10 +130,42 @@ body {
   background: repeating-linear-gradient(
     0deg,
     transparent,
-    transparent 2px,
-    rgba(0, 0, 0, 0.03) 2px,
-    rgba(0, 0, 0, 0.03) 4px
+    transparent 1px,
+    rgba(74, 124, 74, 0.03) 1px,
+    rgba(74, 124, 74, 0.03) 2px
   );
   pointer-events: none;
-  z-index: 1;
+  z-index: 10;
+}
+
+.noise-overlay {
+  position: relative;
+}
+
+.noise-overlay::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+  opacity: 0.02;
+  pointer-events: none;
+  z-index: 5;
+}
+
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-carbon-950);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-military-800);
+  border-radius: 2px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-military-600);
 }
