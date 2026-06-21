@@ -13,6 +13,7 @@ const KANBAN_COLUMNS: AudienceStatus[] = [
   'EN_ANALYSE',
   'VALIDEE',
   'PLANIFIEE',
+  'CONFIRMEE',
   'DEJA_ENVOYE',
   'REJETEE',
   'TERMINEE',

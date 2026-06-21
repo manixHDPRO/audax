@@ -91,7 +91,7 @@ export class AuthService {
 
     await this.logAttempt(user.id, dto.email, ip, true);
 
-    const tokens = await this.generateTokens(user.id, user.email, user.role);
+    const tokens = await this.generateTokens(user.id, user.email, user.role, user.cabinetId, user.bureauId);
 
     return {
       requires2FA: false,
@@ -102,6 +102,8 @@ export class AuthService {
         lastName: user.lastName,
         role: user.role,
         twoFactorEnabled: user.twoFactorEnabled,
+        cabinetId: user.cabinetId,
+        bureauId: user.bureauId,
       },
       ...tokens,
     };
@@ -127,7 +129,7 @@ export class AuthService {
 
     await this.logAttempt(user.id, user.email, ip, true);
 
-    const tokens = await this.generateTokens(user.id, user.email, user.role);
+    const tokens = await this.generateTokens(user.id, user.email, user.role, user.cabinetId, user.bureauId);
 
     return {
       user: {
@@ -137,6 +139,8 @@ export class AuthService {
         lastName: user.lastName,
         role: user.role,
         twoFactorEnabled: user.twoFactorEnabled,
+        cabinetId: user.cabinetId,
+        bureauId: user.bureauId,
       },
       ...tokens,
     };
@@ -153,7 +157,13 @@ export class AuthService {
     }
 
     await this.prisma.refreshToken.delete({ where: { id: stored.id } });
-    return this.generateTokens(stored.user.id, stored.user.email, stored.user.role);
+    return this.generateTokens(
+      stored.user.id,
+      stored.user.email,
+      stored.user.role,
+      stored.user.cabinetId,
+      stored.user.bureauId,
+    );
   }
 
   async logout(refreshToken?: string) {
@@ -218,8 +228,14 @@ export class AuthService {
     return { success: true };
   }
 
-  private async generateTokens(userId: string, email: string, role: string) {
-    const payload = { sub: userId, email, role };
+  private async generateTokens(
+    userId: string,
+    email: string,
+    role: string,
+    cabinetId?: string | null,
+    bureauId?: string | null,
+  ) {
+    const payload = { sub: userId, email, role, cabinetId, bureauId };
 
     const accessToken = this.jwt.sign(payload, {
       secret: this.config.get('JWT_SECRET') ?? 'dev-secret',

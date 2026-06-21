@@ -120,6 +120,8 @@ export interface LoginResponse {
     firstName: string;
     lastName: string;
     role: string;
+    cabinetId?: string | null;
+    bureauId?: string | null;
     twoFactorEnabled?: boolean;
   };
 }
@@ -170,6 +172,8 @@ export interface MeResponse {
   firstName: string;
   lastName: string;
   role: string;
+  cabinetId?: string | null;
+  bureauId?: string | null;
   isActive: boolean;
   twoFactorEnabled: boolean;
   lastLoginAt?: string | null;
@@ -218,6 +222,78 @@ export async function forwardToDircabApi(token: string, id: string) {
   });
 }
 
+export async function closeAudienceApi(token: string, id: string, payload?: { comment?: string }) {
+  return apiFetch<AudienceApiRecord>(`/audiences/${id}/close`, {
+    method: 'POST',
+    token,
+    body: JSON.stringify(payload ?? {}),
+  });
+}
+
+export interface ReceptionPendingApiRecord {
+  id: string;
+  reference: string;
+  subject: string;
+  requesterName: string;
+  status: string;
+  priority: string;
+  scheduledAt?: string | null;
+  createdAt: string;
+  visitTarget?: { firstName: string; lastName: string } | null;
+}
+
+export interface AccompanimentPendingApiRecord {
+  id: string;
+  reference: string;
+  subject: string;
+  requesterName: string;
+  requesterOrg?: string | null;
+  status: string;
+  priority: string;
+  category: string;
+  scheduledAt?: string | null;
+  createdAt: string;
+  validatedAt: string;
+  visitTarget?: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    role: string;
+  } | null;
+  room?: { id: string; name: string; floor?: string | null } | null;
+}
+
+export async function listAccompanimentPendingApi(token: string) {
+  return apiFetch<AccompanimentPendingApiRecord[]>('/audiences/accompaniment-pending', { token });
+}
+
+export async function completeAccompanimentApi(token: string, id: string, comment?: string) {
+  return apiFetch<{ success: boolean; comment: string }>(`/audiences/${id}/complete-accompaniment`, {
+    method: 'POST',
+    token,
+    body: JSON.stringify(comment ? { comment } : {}),
+  });
+}
+
+export async function listReceptionsPendingApi(token: string) {
+  return apiFetch<ReceptionPendingApiRecord[]>('/audiences/receptions-pending', { token });
+}
+
+export async function completeReceptionApi(token: string, id: string, comment?: string) {
+  return apiFetch<AudienceApiRecord>(`/audiences/${id}/complete-reception`, {
+    method: 'POST',
+    token,
+    body: JSON.stringify(comment ? { comment } : {}),
+  });
+}
+
+export async function confirmAudienceApi(token: string, id: string) {
+  return apiFetch<AudienceApiRecord>(`/audiences/${id}/confirm`, {
+    method: 'POST',
+    token,
+  });
+}
+
 export interface CreateAudiencePayload {
   subject: string;
   motive: string;
@@ -227,6 +303,87 @@ export interface CreateAudiencePayload {
   confidentiality?: string;
   category?: string;
   visitTargetUserId: string;
+  visitorId?: string;
+  allowDuplicateToday?: boolean;
+}
+
+export interface RequesterSearchResult {
+  requesters: {
+    requesterName: string;
+    requesterOrg: string | null;
+    category: string;
+    motive: string;
+    lastAudienceAt: string;
+    lastReference: string;
+  }[];
+}
+
+export interface VisitorLookupResult {
+  id: string;
+  firstName: string;
+  lastName: string;
+  organization?: string | null;
+  function?: string | null;
+  badgeCode?: string | null;
+}
+
+export interface DuplicateTodayResult {
+  hasDuplicate: boolean;
+  audiences: {
+    id: string;
+    reference: string;
+    subject: string;
+    status: string;
+    createdAt: string;
+  }[];
+}
+
+export async function searchRequestersFromAudiencesApi(token: string, q: string) {
+  const params = new URLSearchParams({ q });
+  return apiFetch<RequesterSearchResult>(`/audiences/requester-search?${params}`, { token });
+}
+
+export async function searchVisitorsForRegistrationApi(token: string, q: string) {
+  const params = new URLSearchParams({ q });
+  return apiFetch<VisitorLookupResult[]>(`/visitors/search?${params}`, { token });
+}
+
+export async function checkDuplicateTodayApi(token: string, requesterName: string) {
+  const params = new URLSearchParams({ requesterName });
+  return apiFetch<DuplicateTodayResult>(`/audiences/duplicate-today?${params}`, { token });
+}
+
+export interface VisitorApiRecord {
+  id: string;
+  firstName: string;
+  lastName: string;
+  organization?: string | null;
+  function?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  badgeCode?: string | null;
+  createdAt?: string;
+}
+
+export interface CreateVisitorPayload {
+  firstName: string;
+  lastName: string;
+  organization?: string;
+  function?: string;
+  email?: string;
+  phone?: string;
+}
+
+export async function createVisitorApi(token: string, payload: CreateVisitorPayload) {
+  return apiFetch<VisitorApiRecord>('/visitors', {
+    method: 'POST',
+    token,
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function listPreRegisteredVisitorsTodayApi(token: string) {
+  return apiFetch<VisitorApiRecord[]>('/visitors/pre-registered-today', { token });
 }
 
 export interface VisitTargetUser {
@@ -267,6 +424,8 @@ export interface AudienceApiRecord {
       id: string;
       firstName: string;
       lastName: string;
+      badgeCode?: string | null;
+      function?: string | null;
       organization?: string | null;
       accessLevel?: string;
     };
@@ -305,6 +464,13 @@ export interface WaitingRoomAudienceApiRecord {
   category: string;
   priority: string;
   createdAt: string;
+  visitor?: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    function?: string | null;
+    badgeCode?: string | null;
+  } | null;
 }
 
 export async function listAudiencesApi(
@@ -342,6 +508,10 @@ export interface UserListItem {
   role: string;
   isActive: boolean;
   twoFactorEnabled?: boolean;
+  cabinetId?: string | null;
+  bureauId?: string | null;
+  cabinet?: { id: string; name: string } | null;
+  bureau?: { id: string; name: string } | null;
   lastLoginAt?: string | null;
   createdAt: string;
 }
@@ -352,6 +522,8 @@ export interface CreateUserPayload {
   firstName: string;
   lastName: string;
   role: string;
+  cabinetId?: string;
+  bureauId?: string;
 }
 
 export interface UpdateUserPayload {
@@ -359,6 +531,51 @@ export interface UpdateUserPayload {
   lastName?: string;
   role?: string;
   isActive?: boolean;
+  cabinetId?: string;
+  bureauId?: string;
+}
+
+export interface OrgUnit {
+  id: string;
+  name: string;
+}
+
+export async function listCabinetsApi(token: string) {
+  return apiFetch<OrgUnit[]>('/org-units/cabinets', { token });
+}
+
+export async function listBureausApi(token: string) {
+  return apiFetch<OrgUnit[]>('/org-units/bureaus', { token });
+}
+
+export async function createCabinetApi(token: string, name: string) {
+  return apiFetch<OrgUnit>('/org-units/cabinets', {
+    method: 'POST',
+    token,
+    body: JSON.stringify({ name }),
+  });
+}
+
+export async function createBureauApi(token: string, name: string) {
+  return apiFetch<OrgUnit>('/org-units/bureaus', {
+    method: 'POST',
+    token,
+    body: JSON.stringify({ name }),
+  });
+}
+
+export async function deleteCabinetApi(token: string, id: string) {
+  return apiFetch<{ success: boolean }>(`/org-units/cabinets/${id}`, {
+    method: 'DELETE',
+    token,
+  });
+}
+
+export async function deleteBureauApi(token: string, id: string) {
+  return apiFetch<{ success: boolean }>(`/org-units/bureaus/${id}`, {
+    method: 'DELETE',
+    token,
+  });
 }
 
 export async function listUsersApi(token: string) {
@@ -423,6 +640,7 @@ export interface RolesMatrixResponse {
   systemRoles: string[];
   permissionKeys: string[];
   permissionLabels: Record<string, string>;
+  permissionGroups?: { id: string; label: string; keys: string[] }[];
   roleLabels: Record<string, string>;
   roleDescriptions: Record<string, string>;
   matrix: Record<string, string[]>;

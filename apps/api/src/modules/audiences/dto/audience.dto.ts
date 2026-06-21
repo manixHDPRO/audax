@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsEnum, IsIn } from 'class-validator';
+import { IsString, IsOptional, IsEnum, IsIn, IsBoolean } from 'class-validator';
 import { Confidentiality, AudienceCategory, AudienceStatus, ValidationDecision } from '@prisma/client';
 
 export const AUDIENCE_PRIORITIES = ['PRIORITE_0', 'NORMALE', 'URGENTE', 'CRITIQUE'] as const;
@@ -32,6 +32,14 @@ export class CreateAudienceDto {
 
   @IsString()
   visitTargetUserId!: string;
+
+  @IsOptional()
+  @IsString()
+  visitorId?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  allowDuplicateToday?: boolean;
 }
 
 export class UpdateAudienceDto {
@@ -46,6 +54,24 @@ export class UpdateAudienceDto {
   @IsOptional()
   @IsIn(AUDIENCE_PRIORITIES)
   priority?: AudiencePriority;
+}
+
+export class CompleteReceptionDto {
+  @IsOptional()
+  @IsString()
+  comment?: string;
+}
+
+export class CloseAudienceDto {
+  @IsOptional()
+  @IsString()
+  comment?: string;
+}
+
+export class CompleteAccompanimentDto {
+  @IsOptional()
+  @IsString()
+  comment?: string;
 }
 
 export class ValidateAudienceDto {

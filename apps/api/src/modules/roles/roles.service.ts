@@ -2,7 +2,7 @@ import { Injectable, NotFoundException, ConflictException, BadRequestException }
 import { Prisma, UserRole } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PERMISSIONS } from '../../common/permissions';
-import { PERMISSION_LABELS, ROLE_DESCRIPTIONS } from '../../common/permission-labels';
+import { PERMISSION_LABELS, PERMISSION_GROUPS, ROLE_DESCRIPTIONS } from '../../common/permission-labels';
 import { PermissionsService } from '../../common/permissions/permissions.service';
 import { SYSTEM_ROLE_ORDER } from '../../common/role-order';
 import { CreateCustomRoleDto, UpdateCustomRoleDto, UpdateRoleMatrixDto, UpdateSystemRoleDto } from './dto/role.dto';
@@ -43,6 +43,7 @@ export class RolesService {
       systemRoles: SYSTEM_ROLE_ORDER,
       permissionKeys: this.permissionsService.getPermissionKeys(),
       permissionLabels: PERMISSION_LABELS,
+      permissionGroups: PERMISSION_GROUPS,
       roleLabels,
       roleDescriptions,
       matrix,

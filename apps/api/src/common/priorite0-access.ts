@@ -1,9 +1,16 @@
 import { NotFoundException } from '@nestjs/common';
-import { Priority, UserRole } from '@prisma/client';
+import { AudienceStatus, Priority, UserRole } from '@prisma/client';
+import { UserContext } from './audience-role-access';
 
-/** Audiences Priorité 0 : visibles par l'Administrateur et le Protocol. */
+/** Audiences Priorité 0 : visibles par l'Administrateur, le Protocol et le CEMG. 
+ * Le Chef de Cabinet ne voit les P0 que s'il en est l'auteur ou la cible (logique gérée dans audienceListWhereForRole).
+ */
 export function canViewPriorite0Audiences(role: UserRole | string): boolean {
-  return role === UserRole.PROTOCOL || role === UserRole.ADMIN;
+  return (
+    role === UserRole.PROTOCOL ||
+    role === UserRole.ADMIN ||
+    role === UserRole.CEMG
+  );
 }
 
 export function priorite0ExcludeWhere(role: UserRole | string) {
@@ -11,11 +18,51 @@ export function priorite0ExcludeWhere(role: UserRole | string) {
   return { priority: { not: Priority.PRIORITE_0 } };
 }
 
-export function assertCanViewAudience(
-  audience: { priority: Priority },
-  role: UserRole | string,
-): void {
-  if (audience.priority === Priority.PRIORITE_0 && !canViewPriorite0Audiences(role)) {
+interface AudienceAccessRecord {
+  priority: string;
+  status?: AudienceStatus | string;
+  createdById: string;
+  visitTargetUserId?: string | null;
+  visitTarget?: { role?: string; cabinetId?: string | null; bureauId?: string | null } | null;
+}
+
+/** Même logique d'accès que audienceListWhereForRole (détail / validation). */
+export function assertCanViewAudience(audience: AudienceAccessRecord, user: UserContext): void {
+  const { role, id, cabinetId, bureauId } = user;
+
+  if (audience.priority === 'PRIORITE_0' && !canViewPriorite0Audiences(role)) {
     throw new NotFoundException('Audience introuvable');
   }
+
+  if (role === UserRole.ADMIN) return;
+
+  if (role === UserRole.CEMG && audience.status === AudienceStatus.EN_ATTENTE) {
+    throw new NotFoundException('Audience introuvable');
+  }
+
+  if (role === UserRole.PROTOCOL) {
+    const isTargetCEMG = audience.visitTarget?.role === UserRole.CEMG;
+    const isP0 = audience.priority === 'PRIORITE_0';
+    if (isTargetCEMG || isP0) return;
+  }
+
+  const isCreator = audience.createdById === id;
+  const isDirectTarget = audience.visitTargetUserId === id;
+  const sameCabinet = Boolean(cabinetId && audience.visitTarget?.cabinetId === cabinetId);
+  const sameBureau = Boolean(bureauId && audience.visitTarget?.bureauId === bureauId);
+  const targetsCEMG = audience.visitTarget?.role === UserRole.CEMG;
+
+  if (isCreator || isDirectTarget || sameCabinet || sameBureau) return;
+
+  if (
+    (role === UserRole.PROTOCOL || role === UserRole.CEMG || role === UserRole.CHEF) &&
+    targetsCEMG
+  ) {
+    if (role === UserRole.CHEF && audience.priority === 'PRIORITE_0') {
+      throw new NotFoundException('Audience introuvable');
+    }
+    return;
+  }
+
+  throw new NotFoundException('Audience introuvable');
 }

@@ -1,4 +1,4 @@
-export type UserRole = 'ADMIN' | 'CHEF' | 'SECRETAIRE' | 'PROTOCOL' | 'CEMG' | 'SALLE_ATTENTE' | 'OBSERVATEUR';
+export type UserRole = 'ADMIN' | 'CHEF' | 'SECRETAIRE' | 'PROTOCOL' | 'CEMG' | 'SALLE_ATTENTE' | 'OBSERVATEUR' | 'ASSISTANT';
 
 export type AudienceStatus =
   | 'EN_ATTENTE'
@@ -7,6 +7,7 @@ export type AudienceStatus =
   | 'VALIDEE'
   | 'REJETEE'
   | 'PLANIFIEE'
+  | 'CONFIRMEE'
   | 'TERMINEE'
   | 'ARCHIVEE';
 
@@ -20,6 +21,14 @@ export interface AccompaniedPerson {
 }
 
 /** Résumé visible par la salle d'attente (sans statut ni suivi de validation). */
+export interface WaitingRoomVisitorSummary {
+  id: string;
+  firstName: string;
+  lastName: string;
+  function?: string | null;
+  badgeCode?: string | null;
+}
+
 export interface WaitingRoomAudienceEntry {
   id: string;
   reference: string;
@@ -28,6 +37,7 @@ export interface WaitingRoomAudienceEntry {
   category?: string;
   priority?: Priority;
   createdAt: string;
+  visitor?: WaitingRoomVisitorSummary | null;
 }
 
 export interface User {
@@ -36,6 +46,8 @@ export interface User {
   firstName: string;
   lastName: string;
   role: UserRole;
+  cabinetId?: string | null;
+  bureauId?: string | null;
   isActive?: boolean;
   twoFactorEnabled?: boolean;
   lastLoginAt?: string | null;
@@ -143,6 +155,7 @@ export const STATUS_LABELS: Record<AudienceStatus, string> = {
   VALIDEE: 'Validée',
   REJETEE: 'Rejetée',
   PLANIFIEE: 'Planifiée',
+  CONFIRMEE: 'Confirmée',
   TERMINEE: 'Terminée',
   ARCHIVEE: 'Archivée',
 };
@@ -168,6 +181,7 @@ export const ROLE_LABELS: Record<UserRole, string> = {
   CEMG: 'Chef d\'état major général',
   SALLE_ATTENTE: 'Salle d\'attente',
   OBSERVATEUR: 'Observateur',
+  ASSISTANT: 'Assistant',
 };
 
 export const AUDIT_ACTION_LABELS: Record<string, string> = {

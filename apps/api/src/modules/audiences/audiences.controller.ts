@@ -2,10 +2,10 @@ import { Controller, Get, Post, Patch, Delete, Param, Body, Query, UseGuards } f
 import { AuthGuard } from '@nestjs/passport';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { AudiencesService } from './audiences.service';
-import { CreateAudienceDto, UpdateAudienceDto, ValidateAudienceDto } from './dto/audience.dto';
+import { CreateAudienceDto, UpdateAudienceDto, ValidateAudienceDto, CompleteReceptionDto, CompleteAccompanimentDto, CloseAudienceDto } from './dto/audience.dto';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { RequirePermission } from '../../common/decorators/permissions.decorator';
-import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { CurrentUser, JwtPayload } from '../../common/decorators/current-user.decorator';
 import { UserRole } from '@prisma/client';
 
 @ApiTags('audiences')
@@ -21,21 +21,75 @@ export class AudiencesController {
     @Query('status') status?: string,
     @Query('priority') priority?: string,
     @Query('search') search?: string,
-    @CurrentUser('role') role?: UserRole,
+    @CurrentUser() user?: JwtPayload,
   ) {
-    return this.audiencesService.findAll({ status, priority, search, role: role! });
+    return this.audiencesService.findAll({
+      status,
+      priority,
+      search,
+      user: {
+        id: user!.sub,
+        role: user!.role as UserRole,
+        cabinetId: user!.cabinetId,
+        bureauId: user!.bureauId,
+      },
+    });
   }
 
   @Get('stats')
   @RequirePermission('VIEW_AUDIENCES')
-  getStats(@CurrentUser('role') role: UserRole) {
-    return this.audiencesService.getStats(role);
+  getStats(@CurrentUser() user: JwtPayload) {
+    return this.audiencesService.getStats({
+      id: user.sub,
+      role: user.role as UserRole,
+      cabinetId: user.cabinetId,
+      bureauId: user.bureauId,
+    });
+  }
+
+  @Get('accompaniment-pending')
+  @RequirePermission('ACCOMPANY_AUDIENCE')
+  findAccompanimentPending(@CurrentUser() user: JwtPayload) {
+    return this.audiencesService.findAccompanimentPending({
+      id: user.sub,
+      role: user.role as UserRole,
+      cabinetId: user.cabinetId,
+      bureauId: user.bureauId,
+    });
+  }
+
+  @Get('receptions-pending')
+  @RequirePermission('COMPLETE_AUDIENCE')
+  findReceptionsPending(@CurrentUser() user: JwtPayload) {
+    return this.audiencesService.findReceptionsPending({
+      id: user.sub,
+      role: user.role as UserRole,
+      cabinetId: user.cabinetId,
+      bureauId: user.bureauId,
+    });
   }
 
   @Get('visit-targets')
   @RequirePermission('CREATE_AUDIENCE')
-  findVisitTargets() {
-    return this.audiencesService.findVisitTargets();
+  findVisitTargets(@CurrentUser() user: JwtPayload) {
+    return this.audiencesService.findVisitTargets({
+      id: user.sub,
+      role: user.role as UserRole,
+      cabinetId: user.cabinetId,
+      bureauId: user.bureauId,
+    });
+  }
+
+  @Get('requester-search')
+  @RequirePermission('CREATE_AUDIENCE')
+  searchRequesters(@Query('q') q?: string) {
+    return this.audiencesService.searchRequestersFromAudiences(q ?? '');
+  }
+
+  @Get('duplicate-today')
+  @RequirePermission('CREATE_AUDIENCE')
+  findDuplicateToday(@Query('requesterName') requesterName: string) {
+    return this.audiencesService.findDuplicateToday(requesterName ?? '');
   }
 
   @Get('my-today')
@@ -46,8 +100,13 @@ export class AudiencesController {
 
   @Get(':id')
   @RequirePermission('VIEW_AUDIENCES')
-  findOne(@Param('id') id: string, @CurrentUser('role') role: UserRole) {
-    return this.audiencesService.findOne(id, role);
+  findOne(@Param('id') id: string, @CurrentUser() user: JwtPayload) {
+    return this.audiencesService.findOne(id, {
+      id: user.sub,
+      role: user.role as UserRole,
+      cabinetId: user.cabinetId,
+      bureauId: user.bureauId,
+    });
   }
 
   @Post()
@@ -61,20 +120,28 @@ export class AudiencesController {
   update(
     @Param('id') id: string,
     @Body() dto: UpdateAudienceDto,
-    @CurrentUser('sub') userId: string,
-    @CurrentUser('role') role: UserRole,
+    @CurrentUser() user: JwtPayload,
   ) {
-    return this.audiencesService.update(id, dto, userId, role);
+    return this.audiencesService.update(id, dto, {
+      id: user.sub,
+      role: user.role as UserRole,
+      cabinetId: user.cabinetId,
+      bureauId: user.bureauId,
+    });
   }
 
   @Post(':id/forward-dircab')
   @RequirePermission('VALIDATE_AUDIENCE')
   forwardToDircab(
     @Param('id') id: string,
-    @CurrentUser('sub') userId: string,
-    @CurrentUser('role') role: UserRole,
+    @CurrentUser() user: JwtPayload,
   ) {
-    return this.audiencesService.forwardToDircab(id, userId, role);
+    return this.audiencesService.forwardToDircab(id, {
+      id: user.sub,
+      role: user.role as UserRole,
+      cabinetId: user.cabinetId,
+      bureauId: user.bureauId,
+    });
   }
 
   @Post(':id/validate')
@@ -82,15 +149,74 @@ export class AudiencesController {
   validate(
     @Param('id') id: string,
     @Body() dto: ValidateAudienceDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.audiencesService.validate(id, dto, {
+      id: user.sub,
+      role: user.role as UserRole,
+      cabinetId: user.cabinetId,
+      bureauId: user.bureauId,
+    });
+  }
+
+  @Post(':id/close')
+  @RequirePermission('VALIDATE_AUDIENCE')
+  close(
+    @Param('id') id: string,
+    @Body() dto: CloseAudienceDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.audiencesService.closeAudience(
+      id,
+      {
+        id: user.sub,
+        role: user.role as UserRole,
+        cabinetId: user.cabinetId,
+        bureauId: user.bureauId,
+      },
+      dto,
+    );
+  }
+
+  @Post(':id/complete-accompaniment')
+  @RequirePermission('ACCOMPANY_AUDIENCE')
+  completeAccompaniment(
+    @Param('id') id: string,
+    @Body() dto: CompleteAccompanimentDto,
+    @CurrentUser('sub') userId: string,
+  ) {
+    return this.audiencesService.completeAccompaniment(id, userId, dto);
+  }
+
+  @Post(':id/confirm')
+  @RequirePermission('COMPLETE_AUDIENCE')
+  confirm(
+    @Param('id') id: string,
     @CurrentUser('sub') userId: string,
     @CurrentUser('role') role: UserRole,
   ) {
-    return this.audiencesService.validate(id, dto, userId, role);
+    return this.audiencesService.confirmAudience(id, userId, role);
+  }
+
+  @Post(':id/complete-reception')
+  @RequirePermission('COMPLETE_AUDIENCE')
+  completeReception(
+    @Param('id') id: string,
+    @Body() dto: CompleteReceptionDto,
+    @CurrentUser('sub') userId: string,
+    @CurrentUser('role') role: UserRole,
+  ) {
+    return this.audiencesService.completeReception(id, userId, role, dto);
   }
 
   @Delete(':id')
   @RequirePermission('DELETE_AUDIENCE')
-  remove(@Param('id') id: string, @CurrentUser('role') role: UserRole) {
-    return this.audiencesService.remove(id, role);
+  remove(@Param('id') id: string, @CurrentUser() user: JwtPayload) {
+    return this.audiencesService.remove(id, {
+      id: user.sub,
+      role: user.role as UserRole,
+      cabinetId: user.cabinetId,
+      bureauId: user.bureauId,
+    });
   }
 }

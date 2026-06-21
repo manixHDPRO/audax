@@ -10,12 +10,14 @@ import {
   Clock,
   Zap,
   Shield,
+  Users,
+  Calendar,
 } from 'lucide-react';
 import { AuthGuard } from '@/components/auth/auth-guard';
 import { StatusBadge, PriorityBadge } from '@/components/ui/badge';
 import { MOCK_ROOMS } from '@/lib/mock-data';
 import { formatDate, cn } from '@/lib/utils';
-import { useAuthStore, canAccessCommandCenter } from '@/stores/auth-store';
+import { useAuthStore, canAccessAdminCommandCenter, canAccessCemgMonitoring } from '@/stores/auth-store';
 import { useAudiencesStore } from '@/stores/audiences-store';
 import { useRouter } from 'next/navigation';
 
@@ -27,16 +29,23 @@ const roomStatusColors = {
 };
 
 export default function CommandCenterPage() {
-  const { user } = useAuthStore();
+  const { user, permissions } = useAuthStore();
   const router = useRouter();
   const [time, setTime] = useState(new Date());
   const [pulse, setPulse] = useState(0);
 
   useEffect(() => {
-    if (user && !canAccessCommandCenter(user.role)) {
+    if (!user) return;
+
+    if (canAccessCemgMonitoring(user.role, permissions)) {
+      router.replace('/cemg-monitoring');
+      return;
+    }
+
+    if (!canAccessAdminCommandCenter(user.role, permissions)) {
       router.replace('/dashboard');
     }
-  }, [user, router]);
+  }, [user, permissions, router]);
 
   useEffect(() => {
     const t = setInterval(() => setTime(new Date()), 1000);
@@ -49,6 +58,8 @@ export default function CommandCenterPage() {
   const pending = audiences.filter((a) => ['EN_ATTENTE', 'EN_ANALYSE'].includes(a.status));
   const scheduled = audiences.filter((a) => a.scheduledAt);
   const activeTotal = audiences.filter((a) => !['TERMINEE', 'REJETEE'].includes(a.status)).length;
+
+  if (!canAccessAdminCommandCenter(user?.role, permissions)) return null;
 
   return (
     <AuthGuard>

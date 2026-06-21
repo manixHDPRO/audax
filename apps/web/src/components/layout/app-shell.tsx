@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard,
   Radio,
+  Crown,
   Users,
   Calendar,
   FileText,
@@ -21,17 +22,24 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useRouter } from 'next/navigation';
-import { useAuthStore, canAccessCommandCenter, canViewAudit, canCreateAudience, isWaitingRoomRole, receivesLiveAudienceUpdates } from '@/stores/auth-store';
+import {
+  useAuthStore,
+  canAccessMenu,
+  isWaitingRoomRole,
+  receivesLiveAudienceUpdates,
+  getMonitoringRoute,
+  getDefaultAppRoute,
+} from '@/stores/auth-store';
 import { useAudiencesStore } from '@/stores/audiences-store';
 import { isApiConfigured } from '@/lib/api-config';
+import { subscribeAudienceSync } from '@/lib/audience-sync-bus';
 import { ROLE_LABELS } from '@/types';
 
 interface NavItem {
   href: string;
   label: string;
   icon: React.ElementType;
-  roles?: string[];
-  permission?: string;
+  menuPermission: string;
   accent?: boolean;
 }
 
@@ -44,30 +52,30 @@ function isWaitingRoomPath(pathname: string) {
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/command-center', label: 'Command Center', icon: Radio, roles: ['ADMIN', 'CHEF', 'CEMG'], accent: true },
-  { href: '/audiences', label: 'Audiences', icon: FileText },
-  { href: '/audiences/new', label: 'Nouvelle', icon: Plus, permission: 'CREATE_AUDIENCE' },
-  { href: '/calendar', label: 'Agenda', icon: Calendar },
-  { href: '/visitors', label: 'Visiteurs', icon: Users },
-  { href: '/reports', label: 'Rapports', icon: FileText },
-  { href: '/notifications', label: 'Notifications', icon: Bell },
-  { href: '/settings', label: 'Paramètres', icon: Settings },
-  { href: '/audit', label: 'Audit', icon: Shield, roles: ['ADMIN'] },
+  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, menuPermission: 'MENU_DASHBOARD' },
+  { href: '/protocol', label: 'Suivi Protocol', icon: Shield, menuPermission: 'MENU_PROTOCOL' },
+  { href: '/command-center', label: 'Command Center', icon: Radio, menuPermission: 'MENU_COMMAND_CENTER', accent: true },
+  { href: '/cemg-monitoring', label: 'Pilotage CEMG', icon: Crown, menuPermission: 'MENU_CEMG_PILOTAGE', accent: true },
+  { href: '/audiences', label: 'Audiences', icon: FileText, menuPermission: 'MENU_AUDIENCES' },
+  { href: '/audiences/new', label: 'Nouvelle', icon: Plus, menuPermission: 'MENU_NEW_AUDIENCE' },
+  { href: '/calendar', label: 'Agenda', icon: Calendar, menuPermission: 'MENU_CALENDAR' },
+  { href: '/visitors', label: 'Visiteurs', icon: Users, menuPermission: 'MENU_VISITORS' },
+  { href: '/reports', label: 'Rapports', icon: FileText, menuPermission: 'MENU_REPORTS' },
+  { href: '/notifications', label: 'Notifications', icon: Bell, menuPermission: 'MENU_NOTIFICATIONS' },
+  { href: '/settings', label: 'Paramètres', icon: Settings, menuPermission: 'MENU_SETTINGS' },
+  { href: '/audit', label: 'Audit', icon: Shield, menuPermission: 'MENU_AUDIT' },
 ];
 
 function filterNav(role?: string, permissions?: string[]) {
   if (isWaitingRoomRole(role)) {
-    return NAV_ITEMS.filter((item) => isWaitingRoomPath(item.href));
+    return NAV_ITEMS.filter(
+      (item) =>
+        isWaitingRoomPath(item.href) &&
+        canAccessMenu(item.menuPermission, role, permissions),
+    );
   }
 
-  return NAV_ITEMS.filter((item) => {
-    if (item.href === '/command-center' && !canAccessCommandCenter(role, permissions)) return false;
-    if (item.href === '/audit' && !canViewAudit(role, permissions)) return false;
-    if (item.permission && !canCreateAudience(role, permissions)) return false;
-    if (item.roles && role && !item.roles.includes(role)) return false;
-    return true;
-  });
+  return NAV_ITEMS.filter((item) => canAccessMenu(item.menuPermission, role, permissions));
 }
 
 /* ─── Orbital Command Menu — innovation principale ─── */
@@ -200,12 +208,12 @@ function OrbitalMenu({
 }
 
 /* ─── Sidebar rail (desktop) ─── */
-function SidebarRail({ items, activePath }: { items: NavItem[]; activePath: string }) {
+function SidebarRail({ items, activePath, homeHref }: { items: NavItem[]; activePath: string; homeHref: string }) {
   return (
     <aside className="hidden lg:flex fixed left-0 top-0 z-30 h-screen flex-col w-[80px] glass-strong border-r border-military-800/30 py-8 items-center gap-4 shrink-0 overflow-hidden">
       <div className="absolute inset-0 bg-gradient-to-b from-military-900/20 to-transparent pointer-events-none" />
       
-      <Link href="/dashboard" className="mb-6 group relative">
+      <Link href={homeHref} className="mb-6 group relative">
         <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-military-600 to-military-900 flex items-center justify-center glow-green group-hover:scale-110 transition-all duration-500 border border-military-500/30">
           <Hexagon className="w-6 h-6 text-gold-400" />
         </div>
@@ -318,10 +326,19 @@ function TopBar({ onOpenOrbital }: { onOpenOrbital: () => void }) {
 }
 
 /* ─── Bottom command dock (desktop + mobile trigger) ─── */
-function CommandDock({ onOpenOrbital, activePath, items }: { onOpenOrbital: () => void; activePath: string; items: NavItem[] }) {
-  const quickItems = items.filter((i) =>
-    ['/dashboard', '/audiences', '/calendar', '/command-center'].includes(i.href),
-  );
+function CommandDock({
+  onOpenOrbital,
+  activePath,
+  items,
+  monitoringHref,
+}: {
+  onOpenOrbital: () => void;
+  activePath: string;
+  items: NavItem[];
+  monitoringHref?: string | null;
+}) {
+  const quickHrefs = ['/dashboard', '/audiences', '/calendar', ...(monitoringHref ? [monitoringHref] : [])];
+  const quickItems = items.filter((i) => quickHrefs.includes(i.href));
 
   return (
     <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-30 hidden sm:flex">
@@ -372,7 +389,7 @@ function CommandDock({ onOpenOrbital, activePath, items }: { onOpenOrbital: () =
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { user, permissions, isAuthenticated, accessToken } = useAuthStore();
+  const { user, permissions, isAuthenticated, accessToken, refreshUser } = useAuthStore();
   const syncFromApi = useAudiencesStore((s) => s.syncFromApi);
   const syncWaitingRoomToday = useAudiencesStore((s) => s.syncWaitingRoomToday);
   const clearAllAudiences = useAudiencesStore((s) => s.clearAllAudiences);
@@ -380,6 +397,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => setMounted(true), []);
+
+  useEffect(() => {
+    if (!isAuthenticated || !accessToken || !isApiConfigured()) return;
+    void refreshUser();
+  }, [isAuthenticated, accessToken, refreshUser]);
 
   useEffect(() => {
     if (!isAuthenticated || !isWaitingRoomRole(user?.role)) return;
@@ -415,7 +437,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       void syncFromApi(accessToken, { silent: true });
     }, 5000);
 
-    return () => clearInterval(interval);
+    const unsubscribe = subscribeAudienceSync((event) => {
+      if (
+        event.type === 'reception-completed' ||
+        event.type === 'confirmed' ||
+        event.type === 'accompaniment-completed' ||
+        event.type === 'updated'
+      ) {
+        void syncFromApi(accessToken, { silent: true });
+      }
+    });
+
+    return () => {
+      clearInterval(interval);
+      unsubscribe();
+    };
   }, [isAuthenticated, accessToken, user?.role, syncFromApi]);
 
   useEffect(() => {
@@ -425,10 +461,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   if (!mounted) return null;
 
   const items = filterNav(user?.role, permissions);
+  const monitoringHref = getMonitoringRoute(user?.role, permissions);
+  const homeHref = getDefaultAppRoute(user?.role, permissions);
 
   return (
     <div className="h-screen flex overflow-hidden bg-carbon-950 bg-command-grid">
-      {isAuthenticated && <SidebarRail items={items} activePath={pathname} />}
+      {isAuthenticated && <SidebarRail items={items} activePath={pathname} homeHref={homeHref} />}
 
       <div className={cn('flex-1 flex flex-col min-h-0 min-w-0', isAuthenticated && 'lg:ml-[80px]')}>
         {isAuthenticated && <TopBar onOpenOrbital={() => setOrbitalOpen(true)} />}
@@ -439,7 +477,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
         {isAuthenticated && (
           <>
-            <CommandDock onOpenOrbital={() => setOrbitalOpen(true)} activePath={pathname} items={items} />
+            <CommandDock
+              onOpenOrbital={() => setOrbitalOpen(true)}
+              activePath={pathname}
+              items={items}
+              monitoringHref={monitoringHref}
+            />
             <OrbitalMenu
               items={items}
               isOpen={orbitalOpen}

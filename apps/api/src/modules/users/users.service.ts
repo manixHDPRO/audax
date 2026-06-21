@@ -19,6 +19,14 @@ const userSelect = {
   role: true,
   isActive: true,
   twoFactorEnabled: true,
+  cabinetId: true,
+  bureauId: true,
+  cabinet: {
+    select: { id: true, name: true }
+  },
+  bureau: {
+    select: { id: true, name: true }
+  },
   lastLoginAt: true,
   createdAt: true,
   updatedAt: true,
@@ -57,6 +65,8 @@ export class UsersService {
         firstName: dto.firstName,
         lastName: dto.lastName,
         role: dto.role,
+        cabinetId: dto.cabinetId,
+        bureauId: dto.bureauId,
       },
       select: userSelect,
     });

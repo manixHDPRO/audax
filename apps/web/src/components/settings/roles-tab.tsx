@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Card, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -13,15 +13,9 @@ import {
 import { useAuthStore } from '@/stores/auth-store';
 import { API_UNAVAILABLE_MESSAGE } from '@/lib/api-config';
 import { ROLE_LABELS, type UserRole } from '@/types';
-import {
-  DEFAULT_ROLE_MATRIX,
-  PERMISSION_LABELS,
-  ROLE_DESCRIPTIONS,
-  SYSTEM_ROLES,
-} from '@/lib/permissions';
+import { ROLE_DESCRIPTIONS, SYSTEM_ROLES } from '@/lib/permissions';
 import {
   getRolesMatrixApi,
-  updateRolesMatrixApi,
   updateSystemRoleApi,
   createCustomRoleApi,
   updateCustomRoleApi,
@@ -29,8 +23,7 @@ import {
   type CustomRoleItem,
   type RolesMatrixResponse,
 } from '@/lib/api-client';
-import { cn } from '@/lib/utils';
-import { Check, Pencil, Plus, RefreshCw, Save, Trash2, X } from 'lucide-react';
+import { Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react';
 
 const inputClass =
   'mt-1 w-full h-9 px-3 rounded-lg bg-carbon-800 border border-carbon-600 text-sm text-cream focus:outline-none focus:border-military-500 focus:ring-1 focus:ring-military-500/30 transition-all';
@@ -44,10 +37,9 @@ type EditingRole =
   | { kind: 'system'; code: string; label: string; description: string }
   | { kind: 'custom'; role: CustomRoleItem };
 
-export function RolesMatrixTab() {
+export function RolesTab() {
   const { accessToken } = useAuthStore();
   const [data, setData] = useState<RolesMatrixResponse | null>(null);
-  const [matrix, setMatrix] = useState<Record<string, UserRole[]>>(DEFAULT_ROLE_MATRIX);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -55,7 +47,7 @@ export function RolesMatrixTab() {
   const [createOpen, setCreateOpen] = useState(false);
   const [editingRole, setEditingRole] = useState<EditingRole | null>(null);
 
-  const loadMatrix = useCallback(async (options?: { keepMessages?: boolean }) => {
+  const loadRoles = useCallback(async (options?: { keepMessages?: boolean }) => {
     if (!accessToken) return;
 
     setLoading(true);
@@ -67,7 +59,6 @@ export function RolesMatrixTab() {
     try {
       const result = await getRolesMatrixApi(accessToken);
       setData(result);
-      setMatrix(result.matrix as Record<string, UserRole[]>);
     } catch (err) {
       setError(err instanceof Error ? err.message : API_UNAVAILABLE_MESSAGE);
     } finally {
@@ -76,49 +67,17 @@ export function RolesMatrixTab() {
   }, [accessToken]);
 
   useEffect(() => {
-    loadMatrix();
-  }, [loadMatrix]);
-
-  function togglePermission(permission: string, role: UserRole) {
-    setMatrix((prev) => {
-      const current = prev[permission] ?? [];
-      const next = current.includes(role)
-        ? current.filter((r) => r !== role)
-        : [...current, role];
-      return { ...prev, [permission]: next };
-    });
-    setSuccess('');
-  }
-
-  async function handleSaveMatrix() {
-    if (!accessToken) return;
-
-    setSaving(true);
-    setError('');
-    setSuccess('');
-
-    try {
-      const result = await updateRolesMatrixApi(accessToken, matrix);
-      setData(result);
-      setMatrix(result.matrix as Record<string, UserRole[]>);
-      setSuccess('Permissions enregistrées');
-      await useAuthStore.getState().refreshUser();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erreur lors de la sauvegarde');
-    } finally {
-      setSaving(false);
-    }
-  }
+    void loadRoles();
+  }, [loadRoles]);
 
   async function handleCreateRole(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!accessToken) return;
 
-    const form = e.currentTarget;
     setError('');
     setSuccess('');
 
-    const formData = new FormData(form);
+    const formData = new FormData(e.currentTarget);
     const code = formData.get('code') as string;
     const label = formData.get('label') as string;
     const description = (formData.get('description') as string) || undefined;
@@ -129,8 +88,8 @@ export function RolesMatrixTab() {
         prev ? { ...prev, customRoles: [...prev.customRoles, created] } : prev,
       );
       setCreateOpen(false);
-      setSuccess(`Rôle « ${label} » créé — visible ci-dessous`);
-      await loadMatrix({ keepMessages: true });
+      setSuccess(`Rôle « ${label} » créé`);
+      await loadRoles({ keepMessages: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur lors de la création');
     }
@@ -155,7 +114,7 @@ export function RolesMatrixTab() {
       }
       setEditingRole(null);
       setSuccess(`Rôle « ${label} » mis à jour`);
-      await loadMatrix();
+      await loadRoles();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur lors de la modification');
     }
@@ -178,7 +137,7 @@ export function RolesMatrixTab() {
       if (editingRole?.kind === 'custom' && editingRole.role.id === role.id) {
         setEditingRole(null);
       }
-      await loadMatrix();
+      await loadRoles();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur lors de la suppression');
     }
@@ -186,8 +145,6 @@ export function RolesMatrixTab() {
 
   const systemRoleSet = new Set(data?.systemRoles ?? SYSTEM_ROLES);
   const roles = SYSTEM_ROLES.filter((r) => systemRoleSet.has(r));
-  const permissionKeys = data?.permissionKeys ?? Object.keys(DEFAULT_ROLE_MATRIX);
-  const permissionLabels = data?.permissionLabels ?? PERMISSION_LABELS;
   const roleLabels = (data?.roleLabels ?? ROLE_LABELS) as Record<string, string>;
   const roleDescriptions = (data?.roleDescriptions ?? ROLE_DESCRIPTIONS) as Record<string, string>;
   const customRoles = data?.customRoles ?? [];
@@ -204,13 +161,13 @@ export function RolesMatrixTab() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-lg font-semibold">Rôles & permissions</h2>
+          <h2 className="text-lg font-semibold">Rôles</h2>
           <p className="text-sm text-cream/40 mt-1">
-            Modifiez le libellé et la description des rôles. Les permissions se gèrent dans la matrice.
+            Gérez les libellés, descriptions et rôles personnalisés du système.
           </p>
         </div>
         <div className="flex gap-2 flex-wrap">
-          <Button variant="outline" size="sm" onClick={loadMatrix} disabled={loading || saving}>
+          <Button variant="outline" size="sm" onClick={() => void loadRoles()} disabled={loading || saving}>
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           </Button>
           <Button variant="outline" onClick={() => setCreateOpen(true)} disabled={saving}>
@@ -226,8 +183,9 @@ export function RolesMatrixTab() {
         <div className="rounded-lg border border-green-800/50 bg-green-900/20 px-4 py-3 text-sm text-green-400">{success}</div>
       )}
 
-      <div>
-        <h3 className="text-sm font-medium text-cream/70 mb-3">Tous les rôles</h3>
+      {loading ? (
+        <p className="text-center py-8 text-cream/40">Chargement…</p>
+      ) : (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {roles.map((role) => (
             <Card key={role} className="!p-4 flex flex-col gap-3">
@@ -251,7 +209,7 @@ export function RolesMatrixTab() {
                     description: roleDescriptions[role as UserRole] ?? '',
                   })
                 }
-                disabled={saving || loading}
+                disabled={saving}
               >
                 <Pencil className="w-4 h-4" /> Modifier le rôle
               </Button>
@@ -291,78 +249,13 @@ export function RolesMatrixTab() {
             </Card>
           ))}
         </div>
+      )}
 
-        {customRoles.length === 0 && (
-          <p className="text-xs text-cream/30 mt-3">
-            Les rôles créés via « Nouveau rôle » apparaissent ici avec le badge Personnalisé.
-          </p>
-        )}
-      </div>
-
-      <Card>
-        <CardHeader className="flex flex-row items-start sm:items-center justify-between gap-3">
-          <div>
-            <CardTitle>Matrice des permissions</CardTitle>
-            <p className="text-xs text-cream/40 mt-1">
-              Cochez les permissions accordées à chaque rôle système, puis enregistrez.
-            </p>
-          </div>
-          <Button onClick={handleSaveMatrix} disabled={saving || loading || !data} className="shrink-0">
-            <Save className="w-4 h-4" /> {saving ? 'Enregistrement…' : 'Enregistrer les permissions'}
-          </Button>
-        </CardHeader>
-        {loading ? (
-          <p className="text-center py-8 text-cream/40">Chargement…</p>
-        ) : !data ? (
-          <p className="text-center py-8 text-cream/40">Impossible de charger la matrice</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm min-w-[720px]">
-              <thead>
-                <tr className="border-b border-carbon-700">
-                  <th className="p-3 text-left text-cream/40 font-medium sticky left-0 bg-carbon-900/95">Permission</th>
-                  {roles.map((role) => (
-                    <th key={role} className="p-3 text-center text-cream/40 font-medium text-xs whitespace-nowrap">
-                      {roleLabels[role] ?? role}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {permissionKeys.map((perm) => (
-                  <tr key={perm} className="border-b border-carbon-800/50 hover:bg-carbon-800/20">
-                    <td className="p-3 sticky left-0 bg-carbon-900/95">
-                      <p className="text-sm">{permissionLabels[perm] ?? perm}</p>
-                      <p className="text-[10px] font-mono text-cream/30">{perm}</p>
-                    </td>
-                    {roles.map((role) => {
-                      const active = (matrix[perm] ?? []).includes(role as UserRole);
-                      return (
-                        <td key={role} className="p-3 text-center">
-                          <button
-                            type="button"
-                            onClick={() => togglePermission(perm, role as UserRole)}
-                            disabled={saving}
-                            className={cn(
-                              'w-8 h-8 rounded-lg inline-flex items-center justify-center transition-all cursor-pointer disabled:opacity-40',
-                              active
-                                ? 'bg-military-600/40 text-green-400 border border-military-500/50'
-                                : 'bg-carbon-800/50 text-cream/20 border border-carbon-700/50 hover:border-carbon-600',
-                            )}
-                            title={active ? 'Retirer' : 'Accorder'}
-                          >
-                            {active ? <Check className="w-4 h-4" /> : <X className="w-3.5 h-3.5" />}
-                          </button>
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Card>
+      {!loading && customRoles.length === 0 && (
+        <p className="text-xs text-cream/30">
+          Les rôles créés via « Nouveau rôle » apparaissent ici avec le badge Personnalisé.
+        </p>
+      )}
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="max-w-lg">

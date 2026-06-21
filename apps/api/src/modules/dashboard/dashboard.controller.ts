@@ -2,7 +2,7 @@ import { Controller, Get, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { DashboardService } from './dashboard.service';
-import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { CurrentUser, JwtPayload } from '../../common/decorators/current-user.decorator';
 import { UserRole } from '@prisma/client';
 
 @ApiTags('dashboard')
@@ -13,12 +13,22 @@ export class DashboardController {
   constructor(private dashboardService: DashboardService) {}
 
   @Get()
-  getOverview(@CurrentUser('role') role: UserRole) {
-    return this.dashboardService.getOverview(role);
+  getOverview(@CurrentUser() user: JwtPayload) {
+    return this.dashboardService.getOverview({
+      id: user.sub,
+      role: user.role as UserRole,
+      cabinetId: user.cabinetId,
+      bureauId: user.bureauId,
+    });
   }
 
   @Get('activity')
-  getActivity(@CurrentUser('role') role: UserRole) {
-    return this.dashboardService.getRecentActivity(role);
+  getActivity(@CurrentUser() user: JwtPayload) {
+    return this.dashboardService.getRecentActivity({
+      id: user.sub,
+      role: user.role as UserRole,
+      cabinetId: user.cabinetId,
+      bureauId: user.bureauId,
+    });
   }
 }

@@ -17,7 +17,9 @@ import { AuthGuard } from '@/components/auth/auth-guard';
 import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { StatusBadge, PriorityBadge } from '@/components/ui/badge';
 import { formatDateShort, cn } from '@/lib/utils';
+import { isCemgCabinetHistoryAudience, isInCemgWaitingQueue } from '@/lib/audience-utils';
 import { useAudiencesStore } from '@/stores/audiences-store';
+import { useAuthStore } from '@/stores/auth-store';
 import type { Audience } from '@/types';
 
 function countByStatus(audiences: Audience[], status: Audience['status']) {
@@ -26,12 +28,19 @@ function countByStatus(audiences: Audience[], status: Audience['status']) {
 
 export default function DashboardPage() {
   const audiences = useAudiencesStore((s) => s.audiences);
+  const user = useAuthStore((s) => s.user);
+  const isCemg = user?.role === 'CEMG';
+
+  const waitingPool = audiences.filter((a) => isInCemgWaitingQueue(a, user?.role));
+  const cemgHistory = isCemg
+    ? audiences.filter((a) => isCemgCabinetHistoryAudience(a, user?.role))
+    : [];
 
   const statCards = [
-    { label: 'En attente', value: countByStatus(audiences, 'EN_ATTENTE'), icon: Clock, color: 'text-amber-400', glow: false },
-    { label: 'En analyse', value: countByStatus(audiences, 'EN_ANALYSE'), icon: Activity, color: 'text-blue-400', glow: false },
-    { label: 'Validées', value: countByStatus(audiences, 'VALIDEE'), icon: CheckCircle2, color: 'text-military-400', glow: false },
-    { label: 'Critiques', value: audiences.filter((a) => a.priority === 'CRITIQUE').length, icon: AlertTriangle, color: 'text-red-400', glow: true },
+    { label: 'En attente', value: countByStatus(waitingPool, 'EN_ATTENTE') + countByStatus(waitingPool, 'DEJA_ENVOYE'), icon: Clock, color: 'text-amber-400', glow: false },
+    { label: 'En analyse', value: countByStatus(waitingPool, 'EN_ANALYSE'), icon: Activity, color: 'text-blue-400', glow: false },
+    { label: 'Validées', value: countByStatus(waitingPool, 'VALIDEE'), icon: CheckCircle2, color: 'text-military-400', glow: false },
+    { label: 'Critiques', value: waitingPool.filter((a) => a.priority === 'CRITIQUE').length, icon: AlertTriangle, color: 'text-red-400', glow: true },
   ];
 
   const isToday = (dateStr?: string | null) => {
@@ -45,7 +54,9 @@ export default function DashboardPage() {
 
   const displayAudiences = audiences;
 
-  const visibleAudiences = displayAudiences.filter((a) => ['EN_ATTENTE', 'PLANIFIEE'].includes(a.status));
+  const visibleAudiences = waitingPool.filter((a) =>
+    ['EN_ATTENTE', 'DEJA_ENVOYE', 'EN_ANALYSE', 'PLANIFIEE', 'VALIDEE', 'CONFIRMEE'].includes(a.status)
+  );
   const priority0 = visibleAudiences.filter((a) => a.priority === 'PRIORITE_0');
   const otherAudiences = visibleAudiences.filter((a) => a.priority !== 'PRIORITE_0');
 
@@ -217,6 +228,38 @@ export default function DashboardPage() {
               </div>
             </Card>
           </motion.div>
+
+          {isCemg && cemgHistory.length ? (
+            <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 }}>
+              <Card tactical className="border-military-800/40">
+                <CardHeader className="border-b border-military-800/50 pb-4 mb-6">
+                  <CardTitle className="text-lg flex items-center gap-3">
+                    <Shield className="w-5 h-5 text-military-500" />
+                    Historique — Délégations au Cabinet
+                  </CardTitle>
+                  <CardDescription className="font-mono text-[10px] uppercase tracking-wider">
+                    Dossiers transmis au Chef de Cabinet — consultation et traçabilité
+                  </CardDescription>
+                </CardHeader>
+                <div className="space-y-3 max-h-[320px] overflow-y-auto pr-1">
+                  {cemgHistory.slice(0, 12).map((aud) => (
+                    <Link
+                      key={aud.id}
+                      href={`/audiences/${aud.id}`}
+                      className="flex items-center justify-between gap-4 p-4 rounded-xl bg-carbon-800/30 border border-military-800/30 hover:border-military-600/40 transition-all group"
+                    >
+                      <div className="min-w-0">
+                        <p className="font-mono text-[10px] text-military-500">{aud.reference}</p>
+                        <p className="text-sm font-medium text-cream group-hover:text-white truncate">{aud.subject}</p>
+                        <p className="text-[10px] text-cream/40 mt-1">{aud.requesterName}</p>
+                      </div>
+                      <StatusBadge status={aud.status} className="scale-75 origin-right shrink-0" />
+                    </Link>
+                  ))}
+                </div>
+              </Card>
+            </motion.div>
+          ) : null}
 
           {/* Timeline des opérations */}
           <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.4 }}>

@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { motion } from 'framer-motion';
-import { Search, Plus, Filter, Clock, LayoutGrid, Table2 } from 'lucide-react';
+import { Search, Plus, Filter, Clock, LayoutGrid, Table2, Navigation, BellRing } from 'lucide-react';
 import { AuthGuard } from '@/components/auth/auth-guard';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -15,8 +15,15 @@ import {
   type AudienceListViewMode,
 } from '@/components/audiences/audience-list-views';
 import { useAudiencesStore } from '@/stores/audiences-store';
-import { useAuthStore, canCreateAudience, canFilterAudiencesByPriority, isWaitingRoomRole } from '@/stores/auth-store';
-import { PRIORITY_LABELS, STATUS_LABELS } from '@/types';
+import { useAuthStore, canCreateAudience, canFilterAudiencesByPriority, canAccompanyAudience, isWaitingRoomRole } from '@/stores/auth-store';
+import { PRIORITY_LABELS, STATUS_LABELS, ROLE_LABELS, type UserRole } from '@/types';
+import {
+  completeAccompanimentApi,
+  listAccompanimentPendingApi,
+  type AccompanimentPendingApiRecord,
+} from '@/lib/api-client';
+import { notifyAudienceSync, subscribeAudienceSync } from '@/lib/audience-sync-bus';
+import { isCemgPilotageAudience } from '@/lib/audience-utils';
 
 function formatTime(iso: string) {
   return new Date(iso).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
@@ -32,8 +39,9 @@ export default function AudiencesPage() {
   const audiences = useAudiencesStore((s) => s.audiences);
   const waitingRoomToday = useAudiencesStore((s) => s.waitingRoomToday);
   const isSyncing = useAudiencesStore((s) => s.isSyncing);
-  const { user, permissions } = useAuthStore();
+  const { user, permissions, accessToken } = useAuthStore();
   const canCreate = canCreateAudience(user?.role, permissions);
+  const canAccompany = canAccompanyAudience(user?.role, permissions);
   const isWaitingRoom = isWaitingRoomRole(user?.role);
   const canFilterByPriority = canFilterAudiencesByPriority(user?.role);
   const searchParams = useSearchParams();
@@ -45,6 +53,87 @@ export default function AudiencesPage() {
   const [viewMode, setViewMode] = useState<AudienceListViewMode>('table');
   const [tablePage, setTablePage] = useState(1);
   const [tablePageSize, setTablePageSize] = useState(10);
+  const [accompanimentPending, setAccompanimentPending] = useState<AccompanimentPendingApiRecord[]>([]);
+  const [loadingAccompaniment, setLoadingAccompaniment] = useState(false);
+  const [accompanyingId, setAccompanyingId] = useState<string | null>(null);
+  const [accompanimentError, setAccompanimentError] = useState('');
+
+  const loadAccompanimentPending = useCallback(async (silent = false) => {
+    if (!accessToken || !canAccompany) return;
+    if (!silent) setLoadingAccompaniment(true);
+    try {
+      const list = await listAccompanimentPendingApi(accessToken);
+      setAccompanimentPending(list);
+      setAccompanimentError('');
+    } catch (err) {
+      if (!silent) {
+        setAccompanimentError(err instanceof Error ? err.message : 'Impossible de charger les audiences validées');
+      }
+    } finally {
+      if (!silent) setLoadingAccompaniment(false);
+    }
+  }, [accessToken, canAccompany]);
+
+  useEffect(() => {
+    if (!isWaitingRoom || !canAccompany || !accessToken) return;
+    void loadAccompanimentPending();
+  }, [isWaitingRoom, canAccompany, accessToken, loadAccompanimentPending]);
+
+  useEffect(() => {
+    if (!isWaitingRoom || !canAccompany || !accessToken) return;
+    const interval = setInterval(() => {
+      void loadAccompanimentPending(true);
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [isWaitingRoom, canAccompany, accessToken, loadAccompanimentPending]);
+
+  useEffect(() => {
+    if (!canAccompany || !accessToken) return;
+    return subscribeAudienceSync((event) => {
+      if (event.type === 'reception-completed' && event.audienceId) {
+        setAccompanimentPending((prev) => prev.filter((a) => a.id !== event.audienceId));
+      }
+      if (
+        event.type === 'confirmed' ||
+        event.type === 'reception-completed' ||
+        event.type === 'accompaniment-completed'
+      ) {
+        void loadAccompanimentPending(true);
+      }
+    });
+  }, [canAccompany, accessToken, loadAccompanimentPending]);
+
+  const handleCompleteAccompaniment = async (audienceId: string) => {
+    if (!accessToken) return;
+
+    setAccompanimentError('');
+    setAccompanyingId(audienceId);
+    try {
+      await completeAccompanimentApi(accessToken, audienceId);
+      setAccompanimentPending((prev) => prev.filter((a) => a.id !== audienceId));
+      notifyAudienceSync({ type: 'accompaniment-completed', audienceId });
+    } catch (err) {
+      setAccompanimentError(
+        err instanceof Error ? err.message : 'Impossible de confirmer l\'accompagnement.',
+      );
+      void loadAccompanimentPending(true);
+    } finally {
+      setAccompanyingId(null);
+    }
+  };
+
+  const formatBureau = (aud: AccompanimentPendingApiRecord) => {
+    const person = aud.visitTarget
+      ? `${aud.visitTarget.firstName} ${aud.visitTarget.lastName}`
+      : 'Bureau non renseigné';
+    const role = aud.visitTarget?.role
+      ? ROLE_LABELS[aud.visitTarget.role as UserRole] ?? aud.visitTarget.role
+      : null;
+    const room = aud.room
+      ? `${aud.room.name}${aud.room.floor ? ` · ${aud.room.floor}` : ''}`
+      : null;
+    return { person, role, room };
+  };
 
   useEffect(() => {
     setViewMode(readStoredViewMode());
@@ -55,7 +144,12 @@ export default function AudiencesPage() {
   }, [searchParams, canCreate]);
 
   const filtered = useMemo(() => {
-    const list = audiences.filter((a) => {
+    const source =
+      user?.role === 'CEMG'
+        ? audiences.filter((a) => isCemgPilotageAudience(a, user.role))
+        : audiences;
+
+    const list = source.filter((a) => {
       const matchSearch =
         !search ||
         a.reference.toLowerCase().includes(search.toLowerCase()) ||
@@ -73,7 +167,7 @@ export default function AudiencesPage() {
     return [...list].sort(
       (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
     );
-  }, [audiences, search, statusFilter, priorityFilter, canFilterByPriority]);
+  }, [audiences, search, statusFilter, priorityFilter, canFilterByPriority, user?.role]);
 
   useEffect(() => {
     setTablePage(1);
@@ -109,14 +203,98 @@ export default function AudiencesPage() {
 
         {isWaitingRoom ? (
           <>
+            {canAccompany ? (
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <BellRing className="w-5 h-5 text-gold-400" />
+                    <h2 className="text-lg font-semibold">Audiences validées — à accompagner</h2>
+                  </div>
+                  <p className="text-xs text-cream/40">
+                    {loadingAccompaniment ? '…' : `${accompanimentPending.length} en attente d'accompagnement`}
+                  </p>
+                </div>
+                <Card className="!p-4 border-gold-500/20 bg-gold-500/5">
+                  <p className="text-sm text-cream/70 mb-4">
+                    Dès qu&apos;une audience est confirmée par le Protocol, elle apparaît ici. Accompagnez le demandeur
+                    jusqu&apos;au bureau de la personne à voir, puis confirmez l&apos;accompagnement.
+                  </p>
+                  {accompanimentError ? (
+                    <p className="text-sm text-red-400 mb-3 rounded-lg border border-red-900/40 bg-red-950/30 px-3 py-2">
+                      {accompanimentError}
+                    </p>
+                  ) : null}
+                  {loadingAccompaniment && accompanimentPending.length === 0 ? (
+                    <p className="text-sm text-cream/40 text-center py-6">Chargement…</p>
+                  ) : accompanimentPending.length === 0 ? (
+                    <p className="text-sm text-cream/40 text-center py-6">
+                      Aucune audience confirmée par le Protocol en attente pour le moment.
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {accompanimentPending.map((aud) => {
+                        const bureau = formatBureau(aud);
+                        return (
+                          <Card
+                            key={aud.id}
+                            className="!p-4 border-military-600/40 bg-military-950/30 ring-1 ring-gold-500/10"
+                          >
+                            <div className="flex flex-wrap items-start gap-4">
+                              <div className="font-mono text-sm text-gold-400 w-36 shrink-0">{aud.reference}</div>
+                              <div className="flex-1 min-w-[200px]">
+                                <p className="font-semibold text-cream">{aud.requesterName}</p>
+                                <p className="text-xs text-cream/45 mt-0.5 line-clamp-1">{aud.subject}</p>
+                                <div className="mt-2 flex items-start gap-2 text-sm text-military-300">
+                                  <Navigation className="w-4 h-4 shrink-0 mt-0.5 text-gold-400" />
+                                  <div>
+                                    <p className="font-medium">{bureau.person}</p>
+                                    {bureau.role ? (
+                                      <p className="text-[11px] text-cream/40">{bureau.role}</p>
+                                    ) : null}
+                                    {bureau.room ? (
+                                      <p className="text-[11px] text-cream/35">Salle : {bureau.room}</p>
+                                    ) : null}
+                                  </div>
+                                </div>
+                              </div>
+                              {aud.priority === 'PRIORITE_0' || aud.priority === 'CRITIQUE' ? (
+                                <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded border border-amber-600/40 text-amber-300 shrink-0">
+                                  {PRIORITY_LABELS[aud.priority as keyof typeof PRIORITY_LABELS]}
+                                </span>
+                              ) : null}
+                              <div className="flex flex-col items-end gap-2 shrink-0">
+                                <span className="text-[10px] text-cream/35">
+                                  Confirmée à {formatTime(aud.validatedAt)}
+                                </span>
+                                <Button
+                                  size="sm"
+                                  variant="gold"
+                                  disabled={accompanyingId === aud.id}
+                                  onClick={() => void handleCompleteAccompaniment(aud.id)}
+                                >
+                                  <Navigation className="w-3.5 h-3.5" />
+                                  {accompanyingId === aud.id ? '…' : 'Accompagné au bureau'}
+                                </Button>
+                              </div>
+                            </div>
+                          </Card>
+                        );
+                      })}
+                    </div>
+                  )}
+                </Card>
+              </div>
+            ) : null}
+
             <Card className="!p-4 border-military-800/40 bg-military-950/20">
               <p className="text-sm text-cream/60">
-                Vous voyez uniquement les demandes que vous avez enregistrées aujourd&apos;hui.
-                Le suivi (validation, report ou refus) est géré par les autres services et n&apos;est pas visible ici, y compris pour les Priorité 0.
+                Vos enregistrements du jour apparaissent ci-dessous. Les audiences validées sont signalées
+                en haut de page pour accompagnement au bureau concerné.
               </p>
             </Card>
 
             <div className="space-y-3">
+              <h2 className="text-lg font-semibold">Enregistrements du jour</h2>
               {isSyncing && waitingRoomToday.length === 0 ? (
                 <Card className="text-center py-12 text-cream/40">Chargement…</Card>
               ) : waitingRoomToday.length === 0 ? (

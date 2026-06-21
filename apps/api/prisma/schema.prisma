@@ -15,6 +15,7 @@ enum UserRole {
   CEMG
   SALLE_ATTENTE
   OBSERVATEUR
+  ASSISTANT
 }
 
 enum AudienceStatus {
@@ -24,6 +25,7 @@ enum AudienceStatus {
   VALIDEE
   REJETEE
   PLANIFIEE
+  CONFIRMEE
   TERMINEE
   ARCHIVEE
 }
@@ -98,8 +100,32 @@ model User {
   notifications    Notification[]
   auditLogs        AuditLog[]
   refreshTokens    RefreshToken[]
+  cabinetId        String?
+  bureauId         String?
+  cabinet          Cabinet?           @relation(fields: [cabinetId], references: [id])
+  bureau           Bureau?            @relation(fields: [bureauId], references: [id])
 
   @@map("users")
+}
+
+model Cabinet {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  users     User[]
+
+  @@map("cabinets")
+}
+
+model Bureau {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  users     User[]
+
+  @@map("bureaus")
 }
 
 model RefreshToken {

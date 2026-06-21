@@ -3,6 +3,7 @@ import { AudienceStatus, UserRole } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RescheduleDto } from './dto/calendar.dto';
 import { assertCanViewAudience } from '../../common/priorite0-access';
+import { UserContext } from '../../common/audience-role-access';
 
 const SLOT_DURATION_MS = 60 * 60 * 1000;
 
@@ -10,14 +11,14 @@ const SLOT_DURATION_MS = 60 * 60 * 1000;
 export class CalendarService {
   constructor(private prisma: PrismaService) {}
 
-  async reschedule(audienceId: string, dto: RescheduleDto, userId: string, role: UserRole) {
+  async reschedule(audienceId: string, dto: RescheduleDto, user: UserContext) {
     const audience = await this.prisma.audience.findUnique({
       where: { id: audienceId },
-      include: { appointment: true },
+      include: { appointment: true, visitTarget: { select: { cabinetId: true, bureauId: true } } },
     });
 
     if (!audience) throw new NotFoundException('Audience introuvable');
-    assertCanViewAudience(audience, role);
+    assertCanViewAudience(audience, user);
 
     if (audience.status === AudienceStatus.DEJA_ENVOYE) {
       throw new BadRequestException('Audience déjà envoyée au Dircab — aucune action n\'est autorisée');
@@ -77,7 +78,7 @@ export class CalendarService {
         audienceId,
         fromStatus: audience.status,
         toStatus: updated.status,
-        changedBy: userId,
+        changedBy: user.id,
         comment: `Replanifiée au ${newStart.toLocaleString('fr-FR')}`,
       },
     });

@@ -13,6 +13,7 @@ import { RoomsModule } from './modules/rooms/rooms.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { CalendarModule } from './modules/calendar/calendar.module';
 import { RolesModule } from './modules/roles/roles.module';
+import { OrgUnitsModule } from './modules/org-units/org-units.module';
 import { HealthController } from './health.controller';
 
 @Module({
@@ -37,6 +38,7 @@ import { HealthController } from './health.controller';
     AuditModule,
     CalendarModule,
     RolesModule,
+    OrgUnitsModule,
   ],
 })
 export class AppModule {}

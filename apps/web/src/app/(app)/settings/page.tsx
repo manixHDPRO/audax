@@ -5,17 +5,21 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import { AuthGuard } from '@/components/auth/auth-guard';
 import { GeneralSettingsTab } from '@/components/settings/general-settings-tab';
 import { UsersManagementTab } from '@/components/settings/users-management-tab';
-import { RolesMatrixTab } from '@/components/settings/roles-matrix-tab';
+import { RolesTab } from '@/components/settings/roles-tab';
+import { PermissionsMatrixTab } from '@/components/settings/permissions-matrix-tab';
+import { OrgUnitsTab } from '@/components/settings/org-units-tab';
 import { useAuthStore, canManageUsers } from '@/stores/auth-store';
 import { cn } from '@/lib/utils';
-import { Settings, UserCog, Shield } from 'lucide-react';
+import { Settings, UserCog, Shield, KeyRound, Building2 } from 'lucide-react';
 
-type SettingsTab = 'general' | 'users' | 'roles';
+type SettingsTab = 'general' | 'users' | 'roles' | 'permissions' | 'org';
 
 const TABS: { id: SettingsTab; label: string; icon: React.ElementType; adminOnly?: boolean }[] = [
   { id: 'general', label: 'Général', icon: Settings },
   { id: 'users', label: 'Utilisateurs', icon: UserCog, adminOnly: true },
-  { id: 'roles', label: 'Rôles & permissions', icon: Shield, adminOnly: true },
+  { id: 'roles', label: 'Rôles', icon: Shield, adminOnly: true },
+  { id: 'permissions', label: 'Permissions', icon: KeyRound, adminOnly: true },
+  { id: 'org', label: 'Structure', icon: Building2, adminOnly: true },
 ];
 
 function SettingsContent() {
@@ -26,7 +30,7 @@ function SettingsContent() {
 
   const rawTab = searchParams.get('tab') as SettingsTab | null;
   const activeTab: SettingsTab =
-    rawTab === 'users' || rawTab === 'roles'
+    rawTab === 'users' || rawTab === 'roles' || rawTab === 'permissions' || rawTab === 'org'
       ? isAdmin
         ? rawTab
         : 'general'
@@ -70,7 +74,9 @@ function SettingsContent() {
 
       {activeTab === 'general' && <GeneralSettingsTab />}
       {activeTab === 'users' && isAdmin && <UsersManagementTab />}
-      {activeTab === 'roles' && isAdmin && <RolesMatrixTab />}
+      {activeTab === 'roles' && isAdmin && <RolesTab />}
+      {activeTab === 'permissions' && isAdmin && <PermissionsMatrixTab />}
+      {activeTab === 'org' && isAdmin && <OrgUnitsTab />}
     </div>
   );
 }

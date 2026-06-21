@@ -5,7 +5,7 @@ import { CalendarService } from './calendar.service';
 import { RescheduleDto } from './dto/calendar.dto';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { RequirePermission } from '../../common/decorators/permissions.decorator';
-import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { CurrentUser, JwtPayload } from '../../common/decorators/current-user.decorator';
 import { UserRole } from '@prisma/client';
 
 @ApiTags('calendar')
@@ -20,9 +20,13 @@ export class CalendarController {
   reschedule(
     @Param('id') id: string,
     @Body() dto: RescheduleDto,
-    @CurrentUser('sub') userId: string,
-    @CurrentUser('role') role: UserRole,
+    @CurrentUser() user: JwtPayload,
   ) {
-    return this.calendarService.reschedule(id, dto, userId, role);
+    return this.calendarService.reschedule(id, dto, {
+      id: user.sub,
+      role: user.role as UserRole,
+      cabinetId: user.cabinetId,
+      bureauId: user.bureauId,
+    });
   }
 }

@@ -9,6 +9,7 @@
     "start:prod": "node dist/main",
     "prisma:generate": "node scripts/with-root-env.js npx prisma generate",
     "prisma:migrate": "node scripts/with-root-env.js npx prisma migrate dev",
+    "prisma:migrate:deploy": "node scripts/with-root-env.js npx prisma migrate deploy",
     "prisma:seed": "node scripts/with-root-env.js npx ts-node prisma/seed.ts",
     "prisma:studio": "node scripts/with-root-env.js npx prisma studio"
   },

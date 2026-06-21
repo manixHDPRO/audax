@@ -25,6 +25,16 @@ export class CreateUserDto {
   @ApiProperty({ enum: UserRole, example: UserRole.SECRETAIRE })
   @IsEnum(UserRole)
   role!: UserRole;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  cabinetId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  bureauId?: string;
 }
 
 export class UpdateUserDto {
@@ -49,6 +59,16 @@ export class UpdateUserDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  cabinetId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  bureauId?: string;
 }
 
 export class ResetPasswordDto {

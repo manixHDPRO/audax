@@ -2,15 +2,15 @@
 
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { useAuthStore } from '@/stores/auth-store';
+import { useAuthStore, getDefaultAppRoute } from '@/stores/auth-store';
 
 export default function HomePage() {
   const router = useRouter();
-  const { isAuthenticated } = useAuthStore();
+  const { isAuthenticated, user, permissions } = useAuthStore();
 
   useEffect(() => {
-    router.replace(isAuthenticated ? '/dashboard' : '/login');
-  }, [isAuthenticated, router]);
+    router.replace(isAuthenticated ? getDefaultAppRoute(user?.role, permissions) : '/login');
+  }, [isAuthenticated, user?.role, permissions, router]);
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-carbon-950">

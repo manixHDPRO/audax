@@ -3,7 +3,7 @@
 import { use, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, CheckCircle, XCircle, Trash2, AlertCircle, CalendarClock, Send } from 'lucide-react';
+import { ArrowLeft, CheckCircle, XCircle, Trash2, AlertCircle, CalendarClock, Send, UserCheck, Archive } from 'lucide-react';
 import { AuthGuard } from '@/components/auth/auth-guard';
 import { Card, CardHeader, CardTitle } from '@/components/ui/card';
 import { StatusBadge, PriorityBadge } from '@/components/ui/badge';
@@ -12,24 +12,28 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { RescheduleAudienceModal } from '@/components/audiences/reschedule-audience-modal';
 import { useAudiencesStore } from '@/stores/audiences-store';
 import { formatDate } from '@/lib/utils';
-import { normalizeAccompaniedPersons, describeStatusHistoryEntry, formatUserName, sortStatusHistoryNewestFirst } from '@/lib/audience-utils';
+import { normalizeAccompaniedPersons, describeStatusHistoryEntry, formatUserName, sortStatusHistoryNewestFirst, isAudienceAtCabinet, isCemgCabinetHistoryAudience } from '@/lib/audience-utils';
 import { PRIORITY_LABELS, CONFIDENTIALITY_LABELS, type Audience, type AudienceStatus } from '@/types';
-import { deleteAudienceApi, forwardToDircabApi, validateAudienceApi } from '@/lib/api-client';
+import { deleteAudienceApi, forwardToDircabApi, validateAudienceApi, completeReceptionApi, confirmAudienceApi, closeAudienceApi } from '@/lib/api-client';
+import { notifyAudienceSync } from '@/lib/audience-sync-bus';
 import {
   useAuthStore,
   canDeleteAudience,
   canValidateAudience,
   canPlanifyAudience,
+  canCompleteAudience,
   isWaitingRoomRole,
 } from '@/stores/auth-store';
 
-const ACTIONABLE_STATUSES: AudienceStatus[] = ['EN_ATTENTE', 'EN_ANALYSE', 'VALIDEE', 'PLANIFIEE'];
+const ACTIONABLE_STATUSES: AudienceStatus[] = ['EN_ATTENTE', 'DEJA_ENVOYE', 'EN_ANALYSE', 'VALIDEE', 'PLANIFIEE'];
 
 export default function AudienceDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
   const audience = useAudiencesStore((s) => s.audiences.find((a) => a.id === id));
   const fetchAudienceById = useAudiencesStore((s) => s.fetchAudienceById);
+  const upsertAudience = useAudiencesStore((s) => s.upsertAudience);
+  const patchAudienceStatus = useAudiencesStore((s) => s.patchAudienceStatus);
   const removeAudience = useAudiencesStore((s) => s.removeAudience);
   const { accessToken, user, permissions } = useAuthStore();
   const [loading, setLoading] = useState(true);
@@ -39,11 +43,15 @@ export default function AudienceDetailPage({ params }: { params: Promise<{ id: s
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [rescheduleOpen, setRescheduleOpen] = useState(false);
   const [dircabDialogOpen, setDircabDialogOpen] = useState(false);
+  const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
+  const [receptionDialogOpen, setReceptionDialogOpen] = useState(false);
+  const [closeDialogOpen, setCloseDialogOpen] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [actionError, setActionError] = useState('');
   const canDelete = canDeleteAudience(user?.role, permissions);
   const canValidate = canValidateAudience(user?.role, permissions);
   const canPlanify = canPlanifyAudience(user?.role, permissions);
+  const canComplete = canCompleteAudience(user?.role, permissions);
 
   useEffect(() => {
     if (isWaitingRoomRole(user?.role)) {
@@ -87,6 +95,12 @@ export default function AudienceDetailPage({ params }: { params: Promise<{ id: s
     setActionLoading(true);
     try {
       await validateAudienceApi(accessToken, displayAudience.id, { decision });
+      const nextStatus: AudienceStatus =
+        decision === 'APPROUVE' ? 'VALIDEE' : decision === 'REJETE' ? 'REJETEE' : 'EN_ANALYSE';
+      const optimistic = { ...displayAudience, status: nextStatus };
+      setDetail(optimistic);
+      upsertAudience(optimistic);
+      notifyAudienceSync({ type: 'updated', audienceId: displayAudience.id });
       const refreshed = await fetchAudienceById(accessToken, displayAudience.id, { force: true });
       if (refreshed) setDetail(refreshed);
     } catch (err) {
@@ -103,6 +117,8 @@ export default function AudienceDetailPage({ params }: { params: Promise<{ id: s
     setActionLoading(true);
     try {
       await forwardToDircabApi(accessToken, displayAudience.id);
+      patchAudienceStatus(displayAudience.id, 'DEJA_ENVOYE');
+      notifyAudienceSync({ type: 'updated', audienceId: displayAudience.id });
       const refreshed = await fetchAudienceById(accessToken, displayAudience.id, { force: true });
       if (refreshed) setDetail(refreshed);
       setDircabDialogOpen(false);
@@ -117,6 +133,73 @@ export default function AudienceDetailPage({ params }: { params: Promise<{ id: s
     if (accessToken) {
       const refreshed = await fetchAudienceById(accessToken, id, { force: true });
       if (refreshed) setDetail(refreshed);
+    }
+  };
+
+  const handleConfirmAudience = async () => {
+    if (!accessToken || !displayAudience) return;
+
+    setActionError('');
+    setActionLoading(true);
+    try {
+      await confirmAudienceApi(accessToken, displayAudience.id);
+      patchAudienceStatus(displayAudience.id, 'CONFIRMEE');
+      notifyAudienceSync({ type: 'confirmed', audienceId: displayAudience.id });
+      const refreshed = await fetchAudienceById(accessToken, displayAudience.id, { force: true });
+      if (refreshed) setDetail(refreshed);
+      setConfirmDialogOpen(false);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Confirmation impossible');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleCompleteReception = async () => {
+    if (!accessToken || !displayAudience) return;
+
+    setActionError('');
+    setActionLoading(true);
+    try {
+      const fresh = await fetchAudienceById(accessToken, displayAudience.id, { force: true });
+      if (!fresh || fresh.status !== 'CONFIRMEE') {
+        setActionError(
+          'Cette audience doit être confirmée par le Protocol avant de valider la réception.',
+        );
+        if (fresh) setDetail(fresh);
+        setReceptionDialogOpen(false);
+        return;
+      }
+
+      await completeReceptionApi(accessToken, displayAudience.id);
+      patchAudienceStatus(displayAudience.id, 'TERMINEE');
+      notifyAudienceSync({ type: 'reception-completed', audienceId: displayAudience.id });
+      const refreshed = await fetchAudienceById(accessToken, displayAudience.id, { force: true });
+      if (refreshed) setDetail(refreshed);
+      setReceptionDialogOpen(false);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Confirmation impossible');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleCloseAudience = async () => {
+    if (!accessToken || !displayAudience) return;
+
+    setActionError('');
+    setActionLoading(true);
+    try {
+      await closeAudienceApi(accessToken, displayAudience.id);
+      patchAudienceStatus(displayAudience.id, 'TERMINEE');
+      notifyAudienceSync({ type: 'updated', audienceId: displayAudience.id });
+      const refreshed = await fetchAudienceById(accessToken, displayAudience.id, { force: true });
+      if (refreshed) setDetail(refreshed);
+      setCloseDialogOpen(false);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Clôture impossible');
+    } finally {
+      setActionLoading(false);
     }
   };
 
@@ -157,9 +240,37 @@ export default function AudienceDetailPage({ params }: { params: Promise<{ id: s
     );
   }
 
+  const isCemg = user?.role === 'CEMG';
+  const cemgForwardedToDircab =
+    isCemg &&
+    (displayAudience.statusHistory?.some(
+      (entry) =>
+        entry.toStatus === 'DEJA_ENVOYE' &&
+        entry.changedBy === user?.id &&
+        entry.comment === 'Transmise au Dircab',
+    ) ?? false);
+
   const showActions = canValidate && ACTIONABLE_STATUSES.includes(displayAudience.status);
-  const onlyRescheduleAllowed = displayAudience.status === 'VALIDEE' || displayAudience.status === 'PLANIFIEE';
+  const cemgAwaitingDecision =
+    isCemg &&
+    !cemgForwardedToDircab &&
+    !isCemgCabinetHistoryAudience(displayAudience, 'CEMG') &&
+    (displayAudience.status === 'DEJA_ENVOYE' || displayAudience.status === 'EN_ANALYSE');
+  const showCemgDircabButton = cemgAwaitingDecision;
+  const showCemgWorkflowActions = showActions && cemgAwaitingDecision;
+  const showStandardWorkflowActions = showActions && !isCemg;
+  const showAnyWorkflowActions =
+    showCemgDircabButton || showCemgWorkflowActions || showStandardWorkflowActions;
+  const onlyRescheduleAllowed = displayAudience.status === 'VALIDEE' || displayAudience.status === 'PLANIFIEE' || displayAudience.status === 'CONFIRMEE';
+  const canConfirm =
+    canComplete &&
+    (displayAudience.status === 'VALIDEE' || displayAudience.status === 'PLANIFIEE');
+  const canMarkReceived =
+    canComplete &&
+    displayAudience.status === 'CONFIRMEE';
   const historyEntries = sortStatusHistoryNewestFirst(displayAudience.statusHistory);
+  const receptionProof = historyEntries.find((e) => e.toStatus === 'TERMINEE');
+  const atCabinet = isAudienceAtCabinet(displayAudience);
 
   return (
     <AuthGuard>
@@ -177,15 +288,40 @@ export default function AudienceDetailPage({ params }: { params: Promise<{ id: s
               <PriorityBadge priority={displayAudience.priority} />
             </div>
           </div>
-          {showActions ? (
+          {(showAnyWorkflowActions || canMarkReceived || canConfirm) ? (
             <div className="flex flex-col items-end gap-2">
               <div className="flex flex-wrap justify-end gap-2">
-                {canPlanify ? (
+                {canConfirm ? (
+                  <Button
+                    onClick={() => { setActionError(''); setConfirmDialogOpen(true); }}
+                    disabled={actionLoading}
+                  >
+                    <UserCheck className="w-4 h-4" /> Faire le suivi (Confirmer)
+                  </Button>
+                ) : null}
+                {canMarkReceived ? (
+                  <Button
+                    onClick={() => { setActionError(''); setReceptionDialogOpen(true); }}
+                    disabled={actionLoading}
+                  >
+                    <UserCheck className="w-4 h-4" /> Confirmer la réception
+                  </Button>
+                ) : null}
+                {(showCemgWorkflowActions || showStandardWorkflowActions) && canPlanify ? (
                   <Button variant="outline" onClick={() => setRescheduleOpen(true)} disabled={actionLoading}>
                     <CalendarClock className="w-4 h-4" /> Réprogrammer
                   </Button>
                 ) : null}
-                {displayAudience.status === 'EN_ATTENTE' ? (
+                {showCemgDircabButton ? (
+                  <Button
+                    variant="outline"
+                    onClick={() => { setActionError(''); setDircabDialogOpen(true); }}
+                    disabled={actionLoading}
+                  >
+                    <Send className="w-4 h-4" /> Voir le DirCab
+                  </Button>
+                ) : null}
+                {showStandardWorkflowActions && displayAudience.status !== 'DEJA_ENVOYE' ? (
                   <Button
                     variant="outline"
                     onClick={() => { setActionError(''); setDircabDialogOpen(true); }}
@@ -194,27 +330,87 @@ export default function AudienceDetailPage({ params }: { params: Promise<{ id: s
                     <Send className="w-4 h-4" /> Envoyer chez le Dircab
                   </Button>
                 ) : null}
-                <Button
-                  variant="outline"
-                  onClick={() => void handleValidation('APPROUVE')}
-                  disabled={onlyRescheduleAllowed || actionLoading}
-                >
-                  <CheckCircle className="w-4 h-4" /> Valider
-                </Button>
-                <Button
-                  variant="destructive"
-                  onClick={() => void handleValidation('REJETE')}
-                  disabled={onlyRescheduleAllowed || actionLoading}
-                >
-                  <XCircle className="w-4 h-4" /> Rejeter
-                </Button>
+                {showCemgWorkflowActions ? (
+                  <>
+                    <Button
+                      variant="outline"
+                      onClick={() => void handleValidation('APPROUVE')}
+                      disabled={onlyRescheduleAllowed || actionLoading}
+                    >
+                      <CheckCircle className="w-4 h-4" /> Valider
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      onClick={() => void handleValidation('REJETE')}
+                      disabled={onlyRescheduleAllowed || actionLoading}
+                    >
+                      <XCircle className="w-4 h-4" /> Rejeter
+                    </Button>
+                  </>
+                ) : null}
+                {showStandardWorkflowActions ? (
+                  <>
+                    <Button
+                      variant="outline"
+                      onClick={() => void handleValidation('APPROUVE')}
+                      disabled={onlyRescheduleAllowed || actionLoading}
+                    >
+                      <CheckCircle className="w-4 h-4" /> Valider
+                    </Button>
+                    {atCabinet ? (
+                      <Button
+                        variant="destructive"
+                        onClick={() => { setActionError(''); setCloseDialogOpen(true); }}
+                        disabled={onlyRescheduleAllowed || actionLoading}
+                      >
+                        <Archive className="w-4 h-4" /> Clôturer
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="destructive"
+                        onClick={() => void handleValidation('REJETE')}
+                        disabled={onlyRescheduleAllowed || actionLoading}
+                      >
+                        <XCircle className="w-4 h-4" /> Rejeter
+                      </Button>
+                    )}
+                  </>
+                ) : null}
               </div>
               {actionError ? <p className="text-sm text-red-400 text-right">{actionError}</p> : null}
             </div>
           ) : null}
         </div>
 
-        <div className="grid md:grid-cols-1 gap-6 max-w-xl">
+        {displayAudience.status === 'TERMINEE' && receptionProof ? (
+          <Card className="border-military-700/40 bg-military-950/20">
+            <CardHeader>
+              <CardTitle className="text-military-400">
+                {receptionProof.comment?.startsWith('Audience clôturée')
+                  ? 'Audience clôturée'
+                  : 'Preuve de réception'}
+              </CardTitle>
+            </CardHeader>
+            <dl className="space-y-2 text-sm">
+              <div>
+                <dt className="text-cream/40 text-xs">Confirmée le</dt>
+                <dd>{formatDate(receptionProof.createdAt)}</dd>
+              </div>
+              <div>
+                <dt className="text-cream/40 text-xs">Détail</dt>
+                <dd>{receptionProof.comment ?? 'Visiteur reçu — audience terminée'}</dd>
+              </div>
+              {receptionProof.changedByUser ? (
+                <div>
+                  <dt className="text-cream/40 text-xs">Confirmée par</dt>
+                  <dd>{formatUserName(receptionProof.changedByUser)}</dd>
+                </div>
+              ) : null}
+            </dl>
+          </Card>
+        ) : null}
+
+        <div className="grid md:grid-cols-2 gap-6 items-start">
           <Card>
             <CardHeader><CardTitle>Détails</CardTitle></CardHeader>
             <dl className="space-y-3 text-sm">
@@ -255,6 +451,44 @@ export default function AudienceDetailPage({ params }: { params: Promise<{ id: s
               )}
             </dl>
           </Card>
+
+          <Card>
+            <CardHeader><CardTitle>Historique de validation</CardTitle></CardHeader>
+            {historyEntries.length ? (
+              <div className="space-y-4 pl-4 border-l border-military-700/30">
+                {historyEntries.map((entry, index) => {
+                  const { title, detail: entryDetail } = describeStatusHistoryEntry(entry);
+                  const actor = formatUserName(entry.changedByUser);
+                  const isLatest = index === 0;
+                  return (
+                    <div
+                      key={entry.id}
+                      className={`text-sm relative rounded-lg pr-3 py-2 -ml-1 ${
+                        isLatest ? 'bg-military-900/25 border border-military-700/40' : ''
+                      }`}
+                    >
+                      <span
+                        className={`absolute -left-[1.22rem] top-3 rounded-full ${
+                          isLatest ? 'w-2.5 h-2.5 bg-military-400 ring-2 ring-military-600/50' : 'w-2 h-2 bg-military-500'
+                        }`}
+                      />
+                      {isLatest ? (
+                        <p className="text-[10px] uppercase tracking-wider text-military-400 mb-1">
+                          Dernier enregistrement
+                        </p>
+                      ) : null}
+                      <p className="text-cream/40 text-xs">{formatDate(entry.createdAt)}</p>
+                      <p className="font-medium">{title}</p>
+                      {entryDetail ? <p className="text-cream/70">{entryDetail}</p> : null}
+                      {actor ? <p className="text-cream/40 text-xs mt-1">Par {actor}</p> : null}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="text-sm text-cream/50">Aucun historique disponible.</p>
+            )}
+          </Card>
         </div>
 
         {displayAudience.visitors?.length ? (
@@ -268,44 +502,6 @@ export default function AudienceDetailPage({ params }: { params: Promise<{ id: s
             ))}
           </Card>
         ) : null}
-
-        <Card>
-          <CardHeader><CardTitle>Historique de validation</CardTitle></CardHeader>
-          {historyEntries.length ? (
-            <div className="space-y-4 pl-4 border-l border-military-700/30">
-              {historyEntries.map((entry, index) => {
-                const { title, detail: entryDetail } = describeStatusHistoryEntry(entry);
-                const actor = formatUserName(entry.changedByUser);
-                const isLatest = index === 0;
-                return (
-                  <div
-                    key={entry.id}
-                    className={`text-sm relative rounded-lg pr-3 py-2 -ml-1 ${
-                      isLatest ? 'bg-military-900/25 border border-military-700/40' : ''
-                    }`}
-                  >
-                    <span
-                      className={`absolute -left-[1.22rem] top-3 rounded-full ${
-                        isLatest ? 'w-2.5 h-2.5 bg-military-400 ring-2 ring-military-600/50' : 'w-2 h-2 bg-military-500'
-                      }`}
-                    />
-                    {isLatest ? (
-                      <p className="text-[10px] uppercase tracking-wider text-military-400 mb-1">
-                        Dernier enregistrement
-                      </p>
-                    ) : null}
-                    <p className="text-cream/40 text-xs">{formatDate(entry.createdAt)}</p>
-                    <p className="font-medium">{title}</p>
-                    {entryDetail ? <p className="text-cream/70">{entryDetail}</p> : null}
-                    {actor ? <p className="text-cream/40 text-xs mt-1">Par {actor}</p> : null}
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <p className="text-sm text-cream/50">Aucun historique disponible.</p>
-          )}
-        </Card>
 
         {canDelete && (
           <Card className="border-red-900/40">
@@ -334,16 +530,58 @@ export default function AudienceDetailPage({ params }: { params: Promise<{ id: s
         ) : null}
 
         <ConfirmDialog
+          open={confirmDialogOpen}
+          onOpenChange={setConfirmDialogOpen}
+          title="Faire le suivi de l'audience ?"
+          description="Cette action confirme la validation du CEMG et autorise la salle d'attente à accompagner le visiteur."
+          confirmLabel="Confirmer le suivi"
+          cancelLabel="Annuler"
+          loading={actionLoading}
+          loadingLabel="Confirmation…"
+          variant="default"
+          onConfirm={() => void handleConfirmAudience()}
+        />
+
+        <ConfirmDialog
+          open={receptionDialogOpen}
+          onOpenChange={setReceptionDialogOpen}
+          title="Confirmer la réception ?"
+          description="Cette action atteste que le visiteur a été reçu et que l'audience s'est tenue. Le statut passera à Terminée. Réservé au Protocol."
+          confirmLabel="Confirmer la réception"
+          cancelLabel="Annuler"
+          loading={actionLoading}
+          loadingLabel="Confirmation…"
+          variant="default"
+          onConfirm={() => void handleCompleteReception()}
+        />
+
+        <ConfirmDialog
           open={dircabDialogOpen}
           onOpenChange={setDircabDialogOpen}
-          title="Envoyer chez le Dircab ?"
-          description="La demande sera transmise au Chef de cabinet pour analyse et décision."
-          confirmLabel="Transmettre au Dircab"
+          title={user?.role === 'CEMG' ? "Transmettre au Chef de Cabinet ?" : "Envoyer chez le Dircab ?"}
+          description={user?.role === 'CEMG' 
+            ? "L'audience sera transmise à votre Chef de Cabinet pour gestion et suivi."
+            : "La demande sera transmise au Chef de cabinet pour analyse et décision."
+          }
+          confirmLabel={user?.role === 'CEMG' ? "Confirmer la transmission" : "Transmettre au Dircab"}
           cancelLabel="Annuler"
           loading={actionLoading}
           loadingLabel="Transmission…"
           variant="default"
           onConfirm={() => void handleForwardToDircab()}
+        />
+
+        <ConfirmDialog
+          open={closeDialogOpen}
+          onOpenChange={setCloseDialogOpen}
+          title="Clôturer cette audience ?"
+          description="Cette action met fin au dossier transmis au Chef de Cabinet. L'audience passera au statut Terminée."
+          confirmLabel="Clôturer l'audience"
+          cancelLabel="Annuler"
+          loading={actionLoading}
+          loadingLabel="Clôture…"
+          variant="destructive"
+          onConfirm={() => void handleCloseAudience()}
         />
 
         <ConfirmDialog

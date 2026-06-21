@@ -63,7 +63,10 @@ export default function LoginPage() {
     if (pending2FA) {
       const ok = await verify2FA(totpCode);
       setLoading(false);
-      if (ok) router.push(getDefaultAppRoute(useAuthStore.getState().user?.role));
+      if (ok) {
+        const { user, permissions } = useAuthStore.getState();
+        router.push(getDefaultAppRoute(user?.role, permissions));
+      }
       else setError('Code 2FA invalide');
       return;
     }
@@ -71,7 +74,10 @@ export default function LoginPage() {
     const result = await login(email, password);
     setLoading(false);
 
-    if (result === 'ok') router.push(getDefaultAppRoute(useAuthStore.getState().user?.role));
+    if (result === 'ok') {
+      const { user, permissions } = useAuthStore.getState();
+      router.push(getDefaultAppRoute(user?.role, permissions));
+    }
     else if (result === '2fa') setTotpCode('');
     else if (result === 'api_error') {
       setApiReady(false);

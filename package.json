@@ -15,6 +15,7 @@
     "build": "npm run build --workspace=apps/api && npm run build --workspace=apps/web",
     "db:generate": "npm run prisma:generate --workspace=apps/api",
     "db:migrate": "npm run prisma:migrate --workspace=apps/api",
+    "db:migrate:deploy": "npm run prisma:migrate:deploy --workspace=apps/api",
     "db:seed": "npm run prisma:seed --workspace=apps/api",
     "db:setup": "powershell -ExecutionPolicy Bypass -File scripts/setup-db.ps1",
     "docker:up": "docker compose up -d",

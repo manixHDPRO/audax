@@ -138,9 +138,19 @@ export function UsersManagementTab() {
                       )}
                     </p>
                     <p className="text-xs text-cream/40 truncate">{u.email}</p>
-                    <p className="text-[10px] text-cream/30 mt-0.5">
-                      Dernière connexion : {formatDate(u.lastLoginAt)}
-                    </p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <p className="text-[10px] text-cream/30">
+                        Dernière connexion : {formatDate(u.lastLoginAt)}
+                      </p>
+                      {(u.cabinet || u.bureau) && (
+                        <>
+                          <span className="text-[10px] text-cream/20">•</span>
+                          <p className="text-[10px] text-gold-500/60 font-medium uppercase tracking-wider">
+                            {u.cabinet ? `Cabinet: ${u.cabinet.name}` : `Bureau: ${u.bureau.name}`}
+                          </p>
+                        </>
+                      )}
+                    </div>
                   </div>
                 </div>
 

@@ -52,6 +52,14 @@ export function getLatestStatusHistoryEntry(
   return sortStatusHistoryNewestFirst(entries)[0];
 }
 
+function historyEntryDisplay(title: string, detail?: string | null): { title: string; detail?: string } {
+  const normalizedDetail = detail?.trim();
+  if (!normalizedDetail || normalizedDetail === title) {
+    return { title };
+  }
+  return { title, detail: normalizedDetail };
+}
+
 export function describeStatusHistoryEntry(entry: AudienceStatusHistoryEntry): {
   title: string;
   detail?: string;
@@ -59,26 +67,37 @@ export function describeStatusHistoryEntry(entry: AudienceStatusHistoryEntry): {
   const toLabel = STATUS_LABELS[entry.toStatus];
 
   if (!entry.fromStatus) {
-    return { title: 'Demande enregistrée', detail: entry.comment ?? toLabel };
+    return historyEntryDisplay('Demande enregistrée', entry.comment ?? toLabel);
+  }
+
+  if (entry.comment?.startsWith('Accompagné au bureau')) {
+    return historyEntryDisplay('Accompagné au bureau', entry.comment);
   }
 
   switch (entry.toStatus) {
     case 'VALIDEE':
-      return { title: 'Audience validée', detail: entry.comment ?? toLabel };
+      return historyEntryDisplay('Audience validée', entry.comment ?? toLabel);
     case 'REJETEE':
-      return { title: 'Audience rejetée', detail: entry.comment ?? toLabel };
+      return historyEntryDisplay('Audience rejetée', entry.comment ?? toLabel);
     case 'DEJA_ENVOYE':
-      return { title: 'Transmise au Dircab', detail: entry.comment ?? toLabel };
+      if (entry.comment === 'Transmise au Dircab') {
+        return historyEntryDisplay('Transmise au Dircab', entry.comment);
+      }
+      return historyEntryDisplay('Transmise au Cabinet', entry.comment ?? toLabel);
     case 'PLANIFIEE':
-      return { title: 'Audience reprogrammée', detail: entry.comment ?? toLabel };
+      return historyEntryDisplay('Audience reprogrammée', entry.comment ?? toLabel);
+    case 'CONFIRMEE':
+      return historyEntryDisplay('Audience confirmée par le Protocol', entry.comment ?? toLabel);
+    case 'TERMINEE':
+      if (entry.comment?.startsWith('Audience clôturée')) {
+        return historyEntryDisplay('Audience clôturée', entry.comment);
+      }
+      return historyEntryDisplay('Visiteur reçu — audience terminée', entry.comment ?? toLabel);
     case 'EN_ANALYSE':
-      return { title: 'Mise en analyse', detail: entry.comment ?? toLabel };
+      return historyEntryDisplay('Mise en analyse', entry.comment ?? toLabel);
     default: {
       const fromLabel = STATUS_LABELS[entry.fromStatus];
-      return {
-        title: `Passage : ${fromLabel} → ${toLabel}`,
-        detail: entry.comment ?? undefined,
-      };
+      return historyEntryDisplay(`Passage : ${fromLabel} → ${toLabel}`, entry.comment ?? undefined);
     }
   }
 }
@@ -139,4 +158,73 @@ export function normalizeAccompaniedPersons(
 ): AccompaniedPerson[] {
   if (!persons?.length) return [];
   return persons.map((p) => (typeof p === 'string' ? { name: p } : p));
+}
+
+/** Audience transmise au Chef de Cabinet (Protocol ou CEMG). */
+export function wasTransmittedToCabinet(
+  audience: Pick<Audience, 'statusHistory'>,
+): boolean {
+  return (
+    audience.statusHistory?.some(
+      (entry) =>
+        entry.toStatus === 'DEJA_ENVOYE' &&
+        (entry.comment === 'Transmise au Cabinet' || entry.comment === 'Transmise au Dircab'),
+    ) ?? false
+  );
+}
+
+/** Dossier en cours de traitement au Cabinet — « Clôturer » remplace « Rejeter ». */
+export function isAudienceAtCabinet(audience: Pick<Audience, 'status' | 'statusHistory'>): boolean {
+  if (!wasTransmittedToCabinet(audience)) return false;
+  return audience.status === 'DEJA_ENVOYE' || audience.status === 'EN_ANALYSE';
+}
+
+/** Le CEMG a délégué explicitement via « Voir le DirCab ». */
+export function hasCemgDircabDelegation(audience: Pick<Audience, 'validations'>): boolean {
+  return (
+    audience.validations?.some(
+      (v) => v.decision === 'EN_ATTENTE' && v.comment === 'Transmise au Dircab',
+    ) ?? false
+  );
+}
+
+/** Audience confiée au Chef de Cabinet (hors P0 en attente de délégation CEMG). */
+export function isCemgCabinetHistoryAudience(audience: Audience, role?: string): boolean {
+  if (role !== 'CEMG') return false;
+
+  if (audience.status === 'DEJA_ENVOYE' || audience.status === 'EN_ANALYSE') {
+    if (audience.priority === 'PRIORITE_0' && !hasCemgDircabDelegation(audience)) {
+      return false;
+    }
+    return true;
+  }
+
+  return ['TERMINEE', 'REJETEE', 'ARCHIVEE'].includes(audience.status);
+}
+
+/** Fil d'attente actif du CEMG — exclut les dossiers non transmis par le Protocol. */
+export function isInCemgWaitingQueue(audience: Audience, role?: string): boolean {
+  if (role !== 'CEMG') return true;
+
+  // Tant que le Protocol n'a pas transmis, le dossier reste hors pilotage CEMG.
+  if (audience.status === 'EN_ATTENTE') return false;
+
+  const activeStatuses: AudienceStatus[] = [
+    'DEJA_ENVOYE',
+    'EN_ANALYSE',
+    'PLANIFIEE',
+    'VALIDEE',
+    'CONFIRMEE',
+  ];
+  if (!activeStatuses.includes(audience.status)) return false;
+  if (isCemgCabinetHistoryAudience(audience, role)) return false;
+
+  return true;
+}
+
+/** Audience visible sur le pilotage / listes CEMG (après transmission Protocol). */
+export function isCemgPilotageAudience(audience: Audience, role?: string): boolean {
+  if (role !== 'CEMG') return true;
+  if (audience.status === 'EN_ATTENTE') return false;
+  return isInCemgWaitingQueue(audience, role) || isCemgCabinetHistoryAudience(audience, role);
 }

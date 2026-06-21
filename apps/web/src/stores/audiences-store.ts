@@ -2,7 +2,7 @@
 
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { Audience, Priority, Confidentiality, VisitMode, AccompaniedPerson, WaitingRoomAudienceEntry } from '@/types';
+import type { Audience, Priority, Confidentiality, VisitMode, AccompaniedPerson, WaitingRoomAudienceEntry, AudienceStatus } from '@/types';
 import { nextAudienceReference, mapApiAudience } from '@/lib/audience-utils';
 import { getAudienceApi, listAudiencesApi, listMyTodayAudiencesApi } from '@/lib/api-client';
 import { API_UNAVAILABLE_MESSAGE } from '@/lib/api-config';
@@ -55,6 +55,7 @@ interface AudiencesState {
   fetchAudienceById: (token: string, id: string, options?: { force?: boolean }) => Promise<Audience | undefined>;
   removeAudience: (id: string) => void;
   upsertAudience: (audience: Audience) => void;
+  patchAudienceStatus: (id: string, status: AudienceStatus) => void;
 }
 
 export const useAudiencesStore = create<AudiencesState>()(
@@ -147,6 +148,7 @@ export const useAudiencesStore = create<AudiencesState>()(
               category: r.category,
               priority: r.priority as WaitingRoomAudienceEntry['priority'],
               createdAt: r.createdAt,
+              visitor: r.visitor ?? null,
             })),
             lastSyncedAt: new Date().toISOString(),
             syncError: null,
@@ -193,6 +195,15 @@ export const useAudiencesStore = create<AudiencesState>()(
         } else {
           set({ audiences: [audience, ...list] });
         }
+      },
+
+      patchAudienceStatus: (id, status) => {
+        const list = get().audiences;
+        const idx = list.findIndex((a) => a.id === id);
+        if (idx < 0) return;
+        const next = [...list];
+        next[idx] = { ...next[idx], status };
+        set({ audiences: next });
       },
     }),
     {

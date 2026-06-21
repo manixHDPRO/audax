@@ -6,6 +6,21 @@ const prisma = new PrismaClient();
 async function main() {
   const passwordHash = await bcrypt.hash('Audax2026!', 12);
 
+  const cabinets = await Promise.all([
+    prisma.cabinet.upsert({
+      where: { name: 'Cabinet CEMG' },
+      update: {},
+      create: { name: 'Cabinet CEMG' },
+    }),
+    prisma.cabinet.upsert({
+      where: { name: 'Cabinet Adjoint' },
+      update: {},
+      create: { name: 'Cabinet Adjoint' },
+    }),
+  ]);
+
+  const cabCEMG = cabinets.find(c => c.name === 'Cabinet CEMG')!;
+
   const users = await Promise.all([
     prisma.user.upsert({
       where: { email: 'admin@audax.fardc.cd' },
@@ -20,65 +35,86 @@ async function main() {
     }),
     prisma.user.upsert({
       where: { email: 'chef@audax.fardc.cd' },
-      update: {},
+      update: { cabinetId: cabCEMG.id },
       create: {
         email: 'chef@audax.fardc.cd',
         passwordHash,
         firstName: 'Général',
         lastName: 'Kabongo',
         role: UserRole.CHEF,
+        cabinetId: cabCEMG.id,
+      },
+    }),
+    prisma.user.upsert({
+      where: { email: 'cemg@audax.fardc.cd' },
+      update: { cabinetId: cabCEMG.id },
+      create: {
+        email: 'cemg@audax.fardc.cd',
+        passwordHash,
+        firstName: 'Chef',
+        lastName: 'EMG',
+        role: UserRole.CEMG,
+        cabinetId: cabCEMG.id,
       },
     }),
     prisma.user.upsert({
       where: { email: 'secretaire@audax.fardc.cd' },
-      update: {},
+      update: { cabinetId: cabCEMG.id },
       create: {
         email: 'secretaire@audax.fardc.cd',
         passwordHash,
         firstName: 'Marie',
         lastName: 'Tshisekedi',
         role: UserRole.SECRETAIRE,
+        cabinetId: cabCEMG.id,
       },
     }),
     prisma.user.upsert({
       where: { email: 'officier@audax.fardc.cd' },
-      update: {},
+      update: { cabinetId: cabCEMG.id },
       create: {
         email: 'officier@audax.fardc.cd',
         passwordHash,
         firstName: 'Capitaine',
         lastName: 'Lubala',
         role: UserRole.PROTOCOL,
+        cabinetId: cabCEMG.id,
       },
     }),
     prisma.user.upsert({
       where: { email: 'salle@audax.fardc.cd' },
-      update: {},
+      update: { cabinetId: cabCEMG.id },
       create: {
         email: 'salle@audax.fardc.cd',
         passwordHash,
         firstName: 'Agent',
         lastName: 'Accueil',
         role: UserRole.SALLE_ATTENTE,
+        cabinetId: cabCEMG.id,
       },
     }),
   ]);
 
-  const rooms = await Promise.all([
-    prisma.room.upsert({
-      where: { name: 'Salle Stratégique A' },
+  const bureaus = await Promise.all([
+    prisma.bureau.upsert({
+      where: { name: 'Bureau Opérations' },
       update: {},
-      create: { name: 'Salle Stratégique A', capacity: 12, floor: '3', status: RoomStatus.LIBRE },
+      create: { name: 'Bureau Opérations' },
     }),
-    prisma.room.upsert({
-      where: { name: 'Salle Diplomatique B' },
+    prisma.bureau.upsert({
+      where: { name: 'Bureau Renseignement' },
       update: {},
-      create: { name: 'Salle Diplomatique B', capacity: 8, floor: '2', status: RoomStatus.OCCUPEE },
+      create: { name: 'Bureau Renseignement' },
     }),
-    prisma.room.upsert({
-      where: { name: 'Bureau Chef EMG' },
+    prisma.bureau.upsert({
+      where: { name: 'Bureau Logistique' },
       update: {},
-      create: { name: 'Bureau Chef EMG', capacity: 6, floor: '4', status: RoomStatus.RESERVEE },
+      create: { name: 'Bureau Logistique' },
+    }),
+    prisma.bureau.upsert({
+      where: { name: 'Bureau Transmission' },
+      update: {},
+      create: { name: 'Bureau Transmission' },
     }),
   ]);
 
