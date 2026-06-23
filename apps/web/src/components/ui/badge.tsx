@@ -6,9 +6,11 @@ const statusStyles: Record<AudienceStatus, string> = {
   EN_ATTENTE: 'bg-amber-900/30 text-amber-400 border-amber-700/40',
   EN_ANALYSE: 'bg-blue-900/30 text-blue-400 border-blue-700/40',
   DEJA_ENVOYE: 'bg-indigo-900/30 text-indigo-300 border-indigo-700/40',
+  TRANSMIS_DIRCAB: 'bg-gold-900/30 text-gold-300 border-gold-600/40',
   VALIDEE: 'bg-military-900/50 text-military-400 border-military-600/40',
   REJETEE: 'bg-red-900/30 text-red-400 border-red-700/40',
   PLANIFIEE: 'bg-purple-900/30 text-purple-400 border-purple-700/40',
+  CONFIRMEE: 'bg-teal-900/30 text-teal-300 border-teal-700/40',
   TERMINEE: 'bg-carbon-700 text-cream/60 border-carbon-600',
   ARCHIVEE: 'bg-carbon-800 text-cream/40 border-carbon-700',
 };

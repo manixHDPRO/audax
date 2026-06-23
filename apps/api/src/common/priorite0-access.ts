@@ -1,6 +1,7 @@
 import { NotFoundException } from '@nestjs/common';
 import { AudienceStatus, Priority, UserRole } from '@prisma/client';
 import { UserContext } from './audience-role-access';
+import { isDelegatedToDircab } from './audience-delegation';
 
 /** Audiences Priorité 0 : visibles par l'Administrateur, le Protocol et le CEMG. 
  * Le Chef de Cabinet ne voit les P0 que s'il en est l'auteur ou la cible (logique gérée dans audienceListWhereForRole).
@@ -24,6 +25,8 @@ interface AudienceAccessRecord {
   createdById: string;
   visitTargetUserId?: string | null;
   visitTarget?: { role?: string; cabinetId?: string | null; bureauId?: string | null } | null;
+  statusHistory?: { toStatus: string; comment?: string | null }[];
+  validations?: { decision: string; comment?: string | null }[];
 }
 
 /** Même logique d'accès que audienceListWhereForRole (détail / validation). */
@@ -40,10 +43,13 @@ export function assertCanViewAudience(audience: AudienceAccessRecord, user: User
     throw new NotFoundException('Audience introuvable');
   }
 
+  if (role === UserRole.CEMG && isDelegatedToDircab(audience)) {
+    return;
+  }
+
   if (role === UserRole.PROTOCOL) {
-    const isTargetCEMG = audience.visitTarget?.role === UserRole.CEMG;
-    const isP0 = audience.priority === 'PRIORITE_0';
-    if (isTargetCEMG || isP0) return;
+    if (audience.visitTarget?.role === UserRole.CEMG) return;
+    throw new NotFoundException('Audience introuvable');
   }
 
   const isCreator = audience.createdById === id;
@@ -58,7 +64,11 @@ export function assertCanViewAudience(audience: AudienceAccessRecord, user: User
     (role === UserRole.PROTOCOL || role === UserRole.CEMG || role === UserRole.CHEF) &&
     targetsCEMG
   ) {
-    if (role === UserRole.CHEF && audience.priority === 'PRIORITE_0') {
+    if (
+      role === UserRole.CHEF &&
+      audience.priority === 'PRIORITE_0' &&
+      audience.status !== AudienceStatus.TRANSMIS_DIRCAB
+    ) {
       throw new NotFoundException('Audience introuvable');
     }
     return;

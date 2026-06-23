@@ -12,7 +12,7 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { RescheduleAudienceModal } from '@/components/audiences/reschedule-audience-modal';
 import { useAudiencesStore } from '@/stores/audiences-store';
 import { formatDate } from '@/lib/utils';
-import { normalizeAccompaniedPersons, describeStatusHistoryEntry, formatUserName, sortStatusHistoryNewestFirst, isAudienceAtCabinet, isCemgCabinetHistoryAudience } from '@/lib/audience-utils';
+import { normalizeAccompaniedPersons, describeStatusHistoryEntry, formatUserName, sortStatusHistoryNewestFirst, isAudienceAtCabinet, isCemgCabinetHistoryAudience, isProtocolCemgConfirmQueue, isProtocolCemgReceptionQueue, isSalleReceptionAudience } from '@/lib/audience-utils';
 import { PRIORITY_LABELS, CONFIDENTIALITY_LABELS, type Audience, type AudienceStatus } from '@/types';
 import { deleteAudienceApi, forwardToDircabApi, validateAudienceApi, completeReceptionApi, confirmAudienceApi, closeAudienceApi } from '@/lib/api-client';
 import { notifyAudienceSync } from '@/lib/audience-sync-bus';
@@ -25,7 +25,7 @@ import {
   isWaitingRoomRole,
 } from '@/stores/auth-store';
 
-const ACTIONABLE_STATUSES: AudienceStatus[] = ['EN_ATTENTE', 'DEJA_ENVOYE', 'EN_ANALYSE', 'VALIDEE', 'PLANIFIEE'];
+const ACTIONABLE_STATUSES: AudienceStatus[] = ['EN_ATTENTE', 'DEJA_ENVOYE', 'TRANSMIS_DIRCAB', 'EN_ANALYSE', 'VALIDEE', 'PLANIFIEE'];
 
 export default function AudienceDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -96,11 +96,20 @@ export default function AudienceDetailPage({ params }: { params: Promise<{ id: s
     try {
       await validateAudienceApi(accessToken, displayAudience.id, { decision });
       const nextStatus: AudienceStatus =
-        decision === 'APPROUVE' ? 'VALIDEE' : decision === 'REJETE' ? 'REJETEE' : 'EN_ANALYSE';
+        decision === 'APPROUVE'
+          ? user?.role === 'CHEF'
+            ? 'CONFIRMEE'
+            : 'VALIDEE'
+          : decision === 'REJETE'
+            ? 'REJETEE'
+            : 'EN_ANALYSE';
       const optimistic = { ...displayAudience, status: nextStatus };
       setDetail(optimistic);
       upsertAudience(optimistic);
-      notifyAudienceSync({ type: 'updated', audienceId: displayAudience.id });
+      notifyAudienceSync({
+        type: decision === 'APPROUVE' && user?.role === 'CHEF' ? 'confirmed' : 'updated',
+        audienceId: displayAudience.id,
+      });
       const refreshed = await fetchAudienceById(accessToken, displayAudience.id, { force: true });
       if (refreshed) setDetail(refreshed);
     } catch (err) {
@@ -117,7 +126,8 @@ export default function AudienceDetailPage({ params }: { params: Promise<{ id: s
     setActionLoading(true);
     try {
       await forwardToDircabApi(accessToken, displayAudience.id);
-      patchAudienceStatus(displayAudience.id, 'DEJA_ENVOYE');
+      const nextStatus: AudienceStatus = user?.role === 'CEMG' ? 'TRANSMIS_DIRCAB' : 'DEJA_ENVOYE';
+      patchAudienceStatus(displayAudience.id, nextStatus);
       notifyAudienceSync({ type: 'updated', audienceId: displayAudience.id });
       const refreshed = await fetchAudienceById(accessToken, displayAudience.id, { force: true });
       if (refreshed) setDetail(refreshed);
@@ -164,7 +174,9 @@ export default function AudienceDetailPage({ params }: { params: Promise<{ id: s
       const fresh = await fetchAudienceById(accessToken, displayAudience.id, { force: true });
       if (!fresh || fresh.status !== 'CONFIRMEE') {
         setActionError(
-          'Cette audience doit être confirmée par le Protocol avant de valider la réception.',
+          isWaitingRoomRole(user?.role)
+            ? 'Cette audience doit être confirmée avant de valider la réception.'
+            : 'Cette audience doit être confirmée par le Protocol avant de valider la réception.',
         );
         if (fresh) setDetail(fresh);
         setReceptionDialogOpen(false);
@@ -243,32 +255,45 @@ export default function AudienceDetailPage({ params }: { params: Promise<{ id: s
   const isCemg = user?.role === 'CEMG';
   const cemgForwardedToDircab =
     isCemg &&
-    (displayAudience.statusHistory?.some(
-      (entry) =>
-        entry.toStatus === 'DEJA_ENVOYE' &&
-        entry.changedBy === user?.id &&
-        entry.comment === 'Transmise au Dircab',
-    ) ?? false);
+    (displayAudience.status === 'TRANSMIS_DIRCAB' ||
+      (displayAudience.statusHistory?.some(
+        (entry) =>
+          (entry.toStatus === 'TRANSMIS_DIRCAB' ||
+            (entry.toStatus === 'DEJA_ENVOYE' && entry.comment === 'Transmise au Dircab')) &&
+          entry.changedBy === user?.id,
+      ) ??
+        false));
 
   const showActions = canValidate && ACTIONABLE_STATUSES.includes(displayAudience.status);
   const cemgAwaitingDecision =
     isCemg &&
     !cemgForwardedToDircab &&
     !isCemgCabinetHistoryAudience(displayAudience, 'CEMG') &&
-    (displayAudience.status === 'DEJA_ENVOYE' || displayAudience.status === 'EN_ANALYSE');
+    displayAudience.status === 'DEJA_ENVOYE';
   const showCemgDircabButton = cemgAwaitingDecision;
   const showCemgWorkflowActions = showActions && cemgAwaitingDecision;
   const showStandardWorkflowActions = showActions && !isCemg;
+  /** Transmission au Cabinet / DirCab : CEMG ou Protocol — pas le Chef, destinataire du dossier. */
+  const showForwardToDircabButton =
+    showStandardWorkflowActions &&
+    user?.role !== 'CHEF' &&
+    displayAudience.status !== 'DEJA_ENVOYE';
   const showAnyWorkflowActions =
     showCemgDircabButton || showCemgWorkflowActions || showStandardWorkflowActions;
   const onlyRescheduleAllowed = displayAudience.status === 'VALIDEE' || displayAudience.status === 'PLANIFIEE' || displayAudience.status === 'CONFIRMEE';
   const canConfirm =
     canComplete &&
-    (displayAudience.status === 'VALIDEE' || displayAudience.status === 'PLANIFIEE');
+    isProtocolCemgConfirmQueue(displayAudience);
+  const historyEntries = sortStatusHistoryNewestFirst(displayAudience.statusHistory);
+  const hasAccompaniment = historyEntries.some((e) => e.comment?.startsWith('Accompagné au bureau'));
   const canMarkReceived =
     canComplete &&
-    displayAudience.status === 'CONFIRMEE';
-  const historyEntries = sortStatusHistoryNewestFirst(displayAudience.statusHistory);
+    displayAudience.status === 'CONFIRMEE' &&
+    hasAccompaniment &&
+    (isWaitingRoomRole(user?.role)
+      ? isSalleReceptionAudience(displayAudience)
+      : (user?.role === 'PROTOCOL' || user?.role === 'ADMIN') &&
+        isProtocolCemgReceptionQueue(displayAudience));
   const receptionProof = historyEntries.find((e) => e.toStatus === 'TERMINEE');
   const atCabinet = isAudienceAtCabinet(displayAudience);
 
@@ -321,7 +346,7 @@ export default function AudienceDetailPage({ params }: { params: Promise<{ id: s
                     <Send className="w-4 h-4" /> Voir le DirCab
                   </Button>
                 ) : null}
-                {showStandardWorkflowActions && displayAudience.status !== 'DEJA_ENVOYE' ? (
+                {showForwardToDircabButton ? (
                   <Button
                     variant="outline"
                     onClick={() => { setActionError(''); setDircabDialogOpen(true); }}
@@ -381,6 +406,27 @@ export default function AudienceDetailPage({ params }: { params: Promise<{ id: s
             </div>
           ) : null}
         </div>
+
+        {user?.role === 'CHEF' && displayAudience.status === 'TRANSMIS_DIRCAB' ? (
+          <Card className="border-gold-500/30 bg-gold-950/10">
+            <CardHeader className="py-4">
+              <CardTitle className="text-sm flex items-center gap-2 text-gold-400">
+                <Send className="w-4 h-4" />
+                Audience confiée par le CEMG
+              </CardTitle>
+              <p className="text-sm text-cream/70 mt-2">
+                Cette audience vous a été transmise par le CEMG. Vous en êtes désormais le responsable&nbsp;:
+                la personne à voir et la suite de l'audience sont enregistrées à votre nom.
+              </p>
+              {displayAudience.visitTarget ? (
+                <p className="text-xs text-cream/45 mt-2">
+                  Personne à voir&nbsp;: {displayAudience.visitTarget.firstName}{' '}
+                  {displayAudience.visitTarget.lastName}
+                </p>
+              ) : null}
+            </CardHeader>
+          </Card>
+        ) : null}
 
         {displayAudience.status === 'TERMINEE' && receptionProof ? (
           <Card className="border-military-700/40 bg-military-950/20">
@@ -546,7 +592,11 @@ export default function AudienceDetailPage({ params }: { params: Promise<{ id: s
           open={receptionDialogOpen}
           onOpenChange={setReceptionDialogOpen}
           title="Confirmer la réception ?"
-          description="Cette action atteste que le visiteur a été reçu et que l'audience s'est tenue. Le statut passera à Terminée. Réservé au Protocol."
+          description={
+            isWaitingRoomRole(user?.role)
+              ? "Cette action atteste que le visiteur a été reçu après accompagnement. Le statut passera à Terminée."
+              : "Cette action atteste que le visiteur CEMG a été reçu après accompagnement. Le statut passera à Terminée."
+          }
           confirmLabel="Confirmer la réception"
           cancelLabel="Annuler"
           loading={actionLoading}
@@ -575,7 +625,7 @@ export default function AudienceDetailPage({ params }: { params: Promise<{ id: s
           open={closeDialogOpen}
           onOpenChange={setCloseDialogOpen}
           title="Clôturer cette audience ?"
-          description="Cette action met fin au dossier transmis au Chef de Cabinet. L'audience passera au statut Terminée."
+          description="Cette action met fin à l'audience transmise au Chef de Cabinet. Elle passera au statut Terminée."
           confirmLabel="Clôturer l'audience"
           cancelLabel="Annuler"
           loading={actionLoading}

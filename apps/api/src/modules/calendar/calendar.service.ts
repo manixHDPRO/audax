@@ -20,8 +20,11 @@ export class CalendarService {
     if (!audience) throw new NotFoundException('Audience introuvable');
     assertCanViewAudience(audience, user);
 
-    if (audience.status === AudienceStatus.DEJA_ENVOYE) {
-      throw new BadRequestException('Audience déjà envoyée au Dircab — aucune action n\'est autorisée');
+    if (
+      audience.status === AudienceStatus.DEJA_ENVOYE ||
+      audience.status === AudienceStatus.TRANSMIS_DIRCAB
+    ) {
+      throw new BadRequestException('Audience déjà transmise — reprogrammation non autorisée à ce stade');
     }
 
     const newStart = new Date(dto.scheduledAt);

@@ -433,7 +433,16 @@ export interface AudienceApiRecord {
   statusHistory?: AudienceStatusHistoryApiRecord[];
   validations?: AudienceValidationApiRecord[];
   createdBy?: { firstName: string; lastName: string; email?: string };
-  visitTarget?: { id: string; firstName: string; lastName: string; role?: string };
+  visitTarget?: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    role?: string;
+    cabinetId?: string | null;
+    bureauId?: string | null;
+    cabinet?: { id: string; name: string } | null;
+    bureau?: { id: string; name: string } | null;
+  };
 }
 
 export interface AudienceStatusHistoryApiRecord {
@@ -475,12 +484,20 @@ export interface WaitingRoomAudienceApiRecord {
 
 export async function listAudiencesApi(
   token: string,
-  filters?: { status?: string; priority?: string; search?: string },
+  filters?: {
+    status?: string;
+    priority?: string;
+    search?: string;
+    cabinetId?: string;
+    bureauId?: string;
+  },
 ) {
   const params = new URLSearchParams();
   if (filters?.status) params.set('status', filters.status);
   if (filters?.priority) params.set('priority', filters.priority);
   if (filters?.search) params.set('search', filters.search);
+  if (filters?.cabinetId) params.set('cabinetId', filters.cabinetId);
+  if (filters?.bureauId) params.set('bureauId', filters.bureauId);
   const qs = params.toString();
   return apiFetch<AudienceApiRecord[]>(`/audiences${qs ? `?${qs}` : ''}`, { token });
 }

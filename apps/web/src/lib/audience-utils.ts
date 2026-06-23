@@ -84,9 +84,14 @@ export function describeStatusHistoryEntry(entry: AudienceStatusHistoryEntry): {
         return historyEntryDisplay('Transmise au Dircab', entry.comment);
       }
       return historyEntryDisplay('Transmise au Cabinet', entry.comment ?? toLabel);
+    case 'TRANSMIS_DIRCAB':
+      return historyEntryDisplay('Transmise par le CEMG au DirCab', entry.comment ?? toLabel);
     case 'PLANIFIEE':
       return historyEntryDisplay('Audience reprogrammée', entry.comment ?? toLabel);
     case 'CONFIRMEE':
+      if (entry.comment?.includes('Chef de Cabinet')) {
+        return historyEntryDisplay('Validée par le Chef de Cabinet — accompagnement', entry.comment);
+      }
       return historyEntryDisplay('Audience confirmée par le Protocol', entry.comment ?? toLabel);
     case 'TERMINEE':
       if (entry.comment?.startsWith('Audience clôturée')) {
@@ -160,23 +165,37 @@ export function normalizeAccompaniedPersons(
   return persons.map((p) => (typeof p === 'string' ? { name: p } : p));
 }
 
-/** Audience transmise au Chef de Cabinet (Protocol ou CEMG). */
-export function wasTransmittedToCabinet(
-  audience: Pick<Audience, 'statusHistory'>,
+/** Transmission Protocol → Cabinet CEMG (pas encore déléguée au DirCab). */
+export function wasTransmittedByProtocol(
+  audience: Pick<Audience, 'status' | 'statusHistory' | 'validations'>,
 ): boolean {
+  if (audience.status === 'DEJA_ENVOYE') return true;
   return (
-    audience.statusHistory?.some(
-      (entry) =>
-        entry.toStatus === 'DEJA_ENVOYE' &&
-        (entry.comment === 'Transmise au Cabinet' || entry.comment === 'Transmise au Dircab'),
+    audience.validations?.some(
+      (v) => v.decision === 'EN_ATTENTE' && v.comment === 'Transmise au Cabinet',
     ) ?? false
   );
 }
 
-/** Dossier en cours de traitement au Cabinet — « Clôturer » remplace « Rejeter ». */
-export function isAudienceAtCabinet(audience: Pick<Audience, 'status' | 'statusHistory'>): boolean {
-  if (!wasTransmittedToCabinet(audience)) return false;
-  return audience.status === 'DEJA_ENVOYE' || audience.status === 'EN_ANALYSE';
+/** Audience transmise au Chef de Cabinet (délégation CEMG ou legacy). */
+export function wasTransmittedToCabinet(
+  audience: Pick<Audience, 'status' | 'statusHistory' | 'validations'>,
+): boolean {
+  if (audience.status === 'TRANSMIS_DIRCAB') return true;
+
+  const fromValidations =
+    audience.validations?.some(
+      (v) => v.decision === 'EN_ATTENTE' && v.comment === 'Transmise au Dircab',
+    ) ?? false;
+  if (fromValidations) return true;
+
+  return (
+    audience.statusHistory?.some(
+      (entry) =>
+        entry.toStatus === 'TRANSMIS_DIRCAB' ||
+        (entry.toStatus === 'DEJA_ENVOYE' && entry.comment === 'Transmise au Dircab'),
+    ) ?? false
+  );
 }
 
 /** Le CEMG a délégué explicitement via « Voir le DirCab ». */
@@ -188,18 +207,140 @@ export function hasCemgDircabDelegation(audience: Pick<Audience, 'validations'>)
   );
 }
 
-/** Audience confiée au Chef de Cabinet (hors P0 en attente de délégation CEMG). */
+/** Dossier confié au DirCab par le CEMG (hors simple transmission Protocol). */
+export function isDelegatedToDircab(
+  audience: Pick<Audience, 'status' | 'statusHistory' | 'validations'>,
+): boolean {
+  if (audience.status === 'TRANSMIS_DIRCAB') return true;
+  if (hasCemgDircabDelegation(audience)) return true;
+  return (
+    audience.statusHistory?.some(
+      (entry) =>
+        entry.toStatus === 'TRANSMIS_DIRCAB' ||
+        (entry.toStatus === 'DEJA_ENVOYE' && entry.comment === 'Transmise au Dircab'),
+    ) ?? false
+  );
+}
+
+/** Dossier en cours de traitement au Cabinet — « Clôturer » remplace « Rejeter ». */
+export function isAudienceAtCabinet(
+  audience: Pick<Audience, 'status' | 'statusHistory' | 'validations'>,
+): boolean {
+  if (audience.status === 'TRANSMIS_DIRCAB') return true;
+  if (audience.status === 'EN_ANALYSE' && isDelegatedToDircab(audience)) return true;
+  return false;
+}
+
+/** Audience confiée au Chef de Cabinet après délégation CEMG (suivi DirCab). */
 export function isCemgCabinetHistoryAudience(audience: Audience, role?: string): boolean {
   if (role !== 'CEMG') return false;
 
-  if (audience.status === 'DEJA_ENVOYE' || audience.status === 'EN_ANALYSE') {
-    if (audience.priority === 'PRIORITE_0' && !hasCemgDircabDelegation(audience)) {
-      return false;
-    }
-    return true;
+  if (isDelegatedToDircab(audience)) {
+    return ['TRANSMIS_DIRCAB', 'EN_ANALYSE', 'TERMINEE', 'REJETEE', 'ARCHIVEE'].includes(audience.status);
   }
 
   return ['TERMINEE', 'REJETEE', 'ARCHIVEE'].includes(audience.status);
+}
+
+/** Audiences actives pour les KPI du Command Dashboard (store déjà filtré par l'API). */
+export function getCommandDashboardMetricsPool(audiences: Audience[], role?: string): Audience[] {
+  if (role === 'ADMIN') {
+    return audiences;
+  }
+
+  const nonTerminal = audiences.filter(
+    (a) => !['TERMINEE', 'REJETEE', 'ARCHIVEE'].includes(a.status),
+  );
+
+  if (role === 'CEMG') {
+    return nonTerminal.filter((a) => !isCemgCabinetHistoryAudience(a, 'CEMG'));
+  }
+
+  if (role === 'CHEF') {
+    return nonTerminal.filter((a) => isChefPilotageAudience(a, 'CHEF'));
+  }
+
+  if (role === 'PROTOCOL') {
+    return nonTerminal.filter((a) => isCemgRelatedAudience(a));
+  }
+
+  return nonTerminal;
+}
+
+/** Compteurs KPI du Command Dashboard. */
+export function getCommandDashboardStatCounts(audiences: Audience[], role?: string) {
+  const pool = getCommandDashboardMetricsPool(audiences, role);
+  const isCemg = role === 'CEMG';
+
+  return {
+    pending: isCemg
+      ? countAudiencesByStatus(pool, 'DEJA_ENVOYE')
+      : countAudiencesByStatus(pool, 'EN_ATTENTE') + countAudiencesByStatus(pool, 'DEJA_ENVOYE'),
+    inAnalysis: countAudiencesByStatus(pool, 'EN_ANALYSE'),
+    validated:
+      countAudiencesByStatus(pool, 'VALIDEE') +
+      countAudiencesByStatus(pool, 'PLANIFIEE') +
+      countAudiencesByStatus(pool, 'CONFIRMEE'),
+    critical: pool.filter((a) => a.priority === 'CRITIQUE').length,
+  };
+}
+
+function countAudiencesByStatus(audiences: Audience[], status: Audience['status']) {
+  return audiences.filter((a) => a.status === status).length;
+}
+
+function isActiveAudience(audience: Audience) {
+  return !['TERMINEE', 'REJETEE', 'ARCHIVEE'].includes(audience.status);
+}
+
+export function filterAudiencesByOrgUnit(
+  audiences: Audience[],
+  filters: { cabinetId?: string; bureauId?: string },
+): Audience[] {
+  const { cabinetId, bureauId } = filters;
+  if (!cabinetId && !bureauId) return audiences;
+
+  return audiences.filter((audience) => {
+    if (cabinetId && audience.visitTarget?.cabinetId !== cabinetId) return false;
+    if (bureauId && audience.visitTarget?.bureauId !== bureauId) return false;
+    return true;
+  });
+}
+
+export function getVisitTargetOrgLabel(audience: Audience): string {
+  const target = audience.visitTarget;
+  if (!target) return '—';
+  if (target.cabinet?.name) return target.cabinet.name;
+  if (target.bureau?.name) return target.bureau.name;
+  return '—';
+}
+
+/** Vue d'ensemble admin — toutes les audiences sans restriction de circuit. */
+export function getAdminAudienceOverviewStats(audiences: Audience[]) {
+  const active = audiences.filter(isActiveAudience);
+
+  return {
+    total: audiences.length,
+    active: active.length,
+    pending: countAudiencesByStatus(audiences, 'EN_ATTENTE') + countAudiencesByStatus(audiences, 'DEJA_ENVOYE'),
+    inAnalysis: countAudiencesByStatus(audiences, 'EN_ANALYSE'),
+    validated:
+      countAudiencesByStatus(audiences, 'VALIDEE') +
+      countAudiencesByStatus(audiences, 'PLANIFIEE') +
+      countAudiencesByStatus(audiences, 'CONFIRMEE'),
+    completed: countAudiencesByStatus(audiences, 'TERMINEE'),
+    critical: active.filter((a) => a.priority === 'CRITIQUE').length,
+    priority0: active.filter((a) => a.priority === 'PRIORITE_0').length,
+  };
+}
+
+/** Fil d'attente admin — dossiers nécessitant encore une action. */
+export function getAdminOperationalAudiences(audiences: Audience[]) {
+  return audiences.filter((a) =>
+    ['EN_ATTENTE', 'DEJA_ENVOYE', 'EN_ANALYSE', 'TRANSMIS_DIRCAB', 'VALIDEE', 'PLANIFIEE', 'CONFIRMEE'].includes(
+      a.status,
+    ),
+  );
 }
 
 /** Fil d'attente actif du CEMG — exclut les dossiers non transmis par le Protocol. */
@@ -222,9 +363,100 @@ export function isInCemgWaitingQueue(audience: Audience, role?: string): boolean
   return true;
 }
 
+/** Chef en attente : Protocol a transmis au Cabinet, le CEMG n'a pas encore délégué au DirCab (hors P0). */
+export function isChefAwaitingCemgDelegation(audience: Audience): boolean {
+  if (audience.status !== 'DEJA_ENVOYE') return false;
+  if (audience.priority === 'PRIORITE_0') return false;
+  if (!isCemgRelatedAudience(audience)) return false;
+  return wasTransmittedByProtocol(audience) && !isDelegatedToDircab(audience);
+}
+
+/** Fil d'attente Chef de Cabinet — après transmission Protocol ou délégation CEMG. */
+export function isChefCabinetQueue(audience: Audience, role?: string): boolean {
+  if (role !== 'CHEF') return true;
+  if (isChefAwaitingCemgDelegation(audience)) return true;
+  if (audience.status === 'TRANSMIS_DIRCAB') return true;
+  if (audience.status === 'DEJA_ENVOYE' && !isCemgRelatedAudience(audience)) return true;
+  if (audience.status === 'EN_ATTENTE' && !isCemgRelatedAudience(audience)) return true;
+  if (audience.status === 'EN_ANALYSE' && isDelegatedToDircab(audience)) return true;
+  return false;
+}
+
+/** Dossiers visibles dans le pilotage Cabinet (actifs + historique récent). */
+export function isChefPilotageAudience(audience: Audience, role?: string): boolean {
+  if (role !== 'CHEF') return true;
+  if (isChefCabinetQueue(audience, role)) return true;
+  return ['VALIDEE', 'PLANIFIEE', 'CONFIRMEE', 'TERMINEE', 'REJETEE'].includes(audience.status);
+}
+
+/** Espace secrétariat — planification et suivi opérationnel. */
+export function isSecretariatWorkspaceAudience(audience: Audience, role?: string): boolean {
+  if (role !== 'SECRETAIRE' && role !== 'ASSISTANT') return true;
+  return ['VALIDEE', 'PLANIFIEE', 'CONFIRMEE', 'EN_ATTENTE', 'DEJA_ENVOYE', 'TRANSMIS_DIRCAB', 'EN_ANALYSE'].includes(
+    audience.status,
+  );
+}
+
+/** Vue consultation (Observateur) — lecture seule. */
+export function isConsultationAudience(audience: Audience): boolean {
+  return !['ARCHIVEE'].includes(audience.status);
+}
+
 /** Audience visible sur le pilotage / listes CEMG (après transmission Protocol). */
 export function isCemgPilotageAudience(audience: Audience, role?: string): boolean {
   if (role !== 'CEMG') return true;
   if (audience.status === 'EN_ATTENTE') return false;
   return isInCemgWaitingQueue(audience, role) || isCemgCabinetHistoryAudience(audience, role);
+}
+
+/** Réception salle d'attente — Chef de Cabinet, autres bureaux, ou dossiers validés par le Chef. */
+export function isSalleReceptionAudience(audience: Audience): boolean {
+  if (wasValidatedByChefForAccompaniment(audience)) return true;
+  return !isCemgRelatedAudience(audience);
+}
+
+/** Audience relevant du circuit CEMG (réception / suivi Protocol). Hors dossiers délégués au DirCab. */
+export function isCemgRelatedAudience(audience: {
+  status?: Audience['status'];
+  priority: string;
+  visitTarget?: { role?: string } | null;
+  statusHistory?: AudienceStatusHistoryEntry[];
+  validations?: AudienceValidationEntry[];
+}): boolean {
+  if (isDelegatedToDircab(audience)) return false;
+  return audience.visitTarget?.role === 'CEMG';
+}
+
+const CHEF_ACCOMPANIMENT_COMMENT = 'Audience validée par le Chef de Cabinet';
+
+/** Validation directe Chef → accompagnement (hors suivi Protocol CEMG). */
+export function wasValidatedByChefForAccompaniment(audience: {
+  statusHistory?: { comment?: string | null }[];
+}): boolean {
+  return (
+    audience.statusHistory?.some((entry) =>
+      entry.comment?.startsWith(CHEF_ACCOMPANIMENT_COMMENT),
+    ) ?? false
+  );
+}
+
+/** Suivi Protocol après validation CEMG (VALIDEE / PLANIFIEE). */
+export function isProtocolCemgConfirmQueue(audience: Audience): boolean {
+  if (audience.status !== 'VALIDEE' && audience.status !== 'PLANIFIEE') return false;
+  if (!isCemgRelatedAudience(audience)) return false;
+  return !wasValidatedByChefForAccompaniment(audience);
+}
+
+/** Réception Protocol — audiences CEMG confirmées (hors circuit Chef de Cabinet). */
+export function isProtocolCemgReceptionQueue(audience: Audience): boolean {
+  if (audience.status !== 'CONFIRMEE') return false;
+  if (!isCemgRelatedAudience(audience)) return false;
+  return !wasValidatedByChefForAccompaniment(audience);
+}
+
+/** Dossier au Cabinet CEMG visible par le Protocol (hors validations Chef). */
+export function isProtocolCemgCabinetTracking(audience: Audience): boolean {
+  if (!['DEJA_ENVOYE', 'TRANSMIS_DIRCAB', 'EN_ANALYSE'].includes(audience.status)) return false;
+  if (!isCemgRelatedAudience(audience)) return false;
+  return !wasValidatedByChefForAccompaniment(audience);
 }

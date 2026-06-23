@@ -29,42 +29,66 @@ export function audienceListWhereForRole(user: UserContext): Prisma.AudienceWher
       ...(cabinetId ? [{ visitTarget: { cabinetId } }] : []),
       // Audiences dont la cible est dans le même bureau
       ...(bureauId ? [{ visitTarget: { bureauId } }] : []),
-      // Cas particulier : Le Protocol du CEMG doit voir les audiences du CEMG
-      // même si le record du CEMG n'a pas encore son cabinetId de renseigné
-      ...(role === UserRole.PROTOCOL || role === UserRole.CEMG || role === UserRole.CHEF 
-        ? [{ visitTarget: { role: UserRole.CEMG } }] 
+      // CEMG / Chef : audiences dont la personne à voir est le CEMG
+      ...(role === UserRole.CEMG || role === UserRole.CHEF
+        ? [{ visitTarget: { role: UserRole.CEMG } }]
+        : []),
+      ...(role === UserRole.CEMG
+        ? [
+            { status: AudienceStatus.TRANSMIS_DIRCAB },
+            {
+              validations: {
+                some: {
+                  comment: 'Transmise au Dircab',
+                  validator: { role: UserRole.CEMG },
+                },
+              },
+            },
+          ]
         : []),
     ],
   };
 
+  // Protocol CEMG : uniquement les audiences dont la personne à voir est le CEMG
+  if (role === UserRole.PROTOCOL) {
+    return {
+      ...base,
+      visitTarget: { role: UserRole.CEMG },
+    };
+  }
+
   // Logique spécifique pour le Chef de Cabinet
   if (role === UserRole.CHEF) {
-    const filter: Prisma.AudienceWhereInput = {
-      ...base,
-      ...assignmentFilter,
-      status: {
-        in: [
-          AudienceStatus.EN_ATTENTE,
-          AudienceStatus.EN_ANALYSE,
-          AudienceStatus.DEJA_ENVOYE,
-          AudienceStatus.VALIDEE,
-          AudienceStatus.PLANIFIEE,
-          AudienceStatus.CONFIRMEE,
-          AudienceStatus.TERMINEE,
-          AudienceStatus.REJETEE,
-        ],
-      },
-    };
-
-    // Restriction supplémentaire pour le Chef de Cabinet : 
-    // Il ne voit PAS les Priorité 0 transmises, SAUF s'il en est l'auteur, la cible directe,
-    // ou si le CEMG a explicitement délégué la gestion via une transmission.
     return {
-      ...filter,
+      ...base,
       AND: [
+        assignmentFilter,
+        {
+          OR: [
+            {
+              status: {
+                in: [
+                  AudienceStatus.DEJA_ENVOYE,
+                  AudienceStatus.TRANSMIS_DIRCAB,
+                  AudienceStatus.EN_ANALYSE,
+                  AudienceStatus.VALIDEE,
+                  AudienceStatus.PLANIFIEE,
+                  AudienceStatus.CONFIRMEE,
+                  AudienceStatus.TERMINEE,
+                  AudienceStatus.REJETEE,
+                ],
+              },
+            },
+            {
+              status: AudienceStatus.EN_ATTENTE,
+              visitTarget: { role: { not: UserRole.CEMG } },
+            },
+          ],
+        },
         {
           OR: [
             { priority: { not: 'PRIORITE_0' } },
+            { status: AudienceStatus.TRANSMIS_DIRCAB },
             { createdById: id },
             { visitTargetUserId: id },
             {
@@ -89,8 +113,9 @@ export function audienceListWhereForRole(user: UserContext): Prisma.AudienceWher
       ...assignmentFilter,
       status: {
         in: [
-          AudienceStatus.EN_ANALYSE,
           AudienceStatus.DEJA_ENVOYE,
+          AudienceStatus.TRANSMIS_DIRCAB,
+          AudienceStatus.EN_ANALYSE,
           AudienceStatus.VALIDEE,
           AudienceStatus.PLANIFIEE,
           AudienceStatus.CONFIRMEE,
@@ -130,6 +155,7 @@ export function accompanimentPendingWhereForRole(user: UserContext): Prisma.Audi
   if (role === UserRole.SALLE_ATTENTE) {
     const orConditions: Prisma.AudienceWhereInput[] = [
       { visitTarget: { role: UserRole.CEMG } },
+      { visitTarget: { role: UserRole.CHEF } },
       { createdById: id },
     ];
     if (cabinetId) {

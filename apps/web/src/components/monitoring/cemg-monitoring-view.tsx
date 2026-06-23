@@ -21,8 +21,8 @@ import { cn } from '@/lib/utils';
 import {
   describeStatusHistoryEntry,
   hasCemgDircabDelegation,
-  isCemgCabinetHistoryAudience,
   isCemgPilotageAudience,
+  isDelegatedToDircab,
   isInCemgWaitingQueue,
   sortStatusHistoryNewestFirst,
 } from '@/lib/audience-utils';
@@ -50,7 +50,7 @@ export function CemgMonitoringView() {
   }, []);
 
   const waitingPool = audiences.filter((a) => isInCemgWaitingQueue(a, 'CEMG'));
-  const cabinetHistory = audiences.filter((a) => isCemgCabinetHistoryAudience(a, 'CEMG'));
+  const delegatedToDircab = audiences.filter((a) => isDelegatedToDircab(a));
   const pilotageAudiences = audiences.filter((a) => isCemgPilotageAudience(a, 'CEMG'));
   const priority0 = waitingPool.filter((a) => a.priority === 'PRIORITE_0');
   const otherWaiting = waitingPool.filter((a) => a.priority !== 'PRIORITE_0');
@@ -88,8 +88,8 @@ export function CemgMonitoringView() {
       tone: 'text-blue-400',
     },
     {
-      label: 'Délégations Cabinet',
-      value: cabinetHistory.filter((a) => ['DEJA_ENVOYE', 'EN_ANALYSE'].includes(a.status)).length,
+      label: 'Délégations DirCab',
+      value: delegatedToDircab.filter((a) => ['TRANSMIS_DIRCAB', 'EN_ANALYSE'].includes(a.status)).length,
       icon: Send,
       tone: 'text-military-400',
     },
@@ -186,7 +186,7 @@ export function CemgMonitoringView() {
                   Priorité 0 — Décision requise
                 </CardTitle>
                 <CardDescription className="font-mono text-[10px] uppercase tracking-wider">
-                  Dossiers réservés au Chef EMG avant délégation éventuelle
+                  Audiences réservées au Chef EMG avant délégation éventuelle
                 </CardDescription>
               </CardHeader>
               <div className="space-y-3">
@@ -241,7 +241,7 @@ export function CemgMonitoringView() {
                   Fil d&apos;attente actif
                 </CardTitle>
                 <CardDescription className="font-mono text-[10px] uppercase tracking-wider">
-                  Dossiers en cours au Cabinet CEMG
+                  Audiences en cours au Cabinet CEMG
                 </CardDescription>
               </CardHeader>
               <div className="space-y-3 flex-1 overflow-y-auto pr-1 custom-scrollbar">
@@ -282,12 +282,12 @@ export function CemgMonitoringView() {
                   Délégations Cabinet
                 </CardTitle>
                 <CardDescription className="font-mono text-[10px] uppercase tracking-wider">
-                  Suivi des transmissions au Chef de Cabinet
+                  Audiences confiées au Chef de Cabinet après délégation CEMG
                 </CardDescription>
               </CardHeader>
               <div className="space-y-3 max-h-[420px] overflow-y-auto pr-1 custom-scrollbar">
-                {cabinetHistory.length ? (
-                  cabinetHistory.slice(0, 8).map((aud) => (
+                {delegatedToDircab.length ? (
+                  delegatedToDircab.slice(0, 8).map((aud) => (
                     <Link
                       key={aud.id}
                       href={`/audiences/${aud.id}`}
@@ -368,7 +368,7 @@ export function CemgMonitoringView() {
                 Activité récente
               </CardTitle>
               <CardDescription className="font-mono text-[10px] uppercase tracking-wider">
-                Derniers mouvements sur les dossiers CEMG
+                Derniers mouvements sur les audiences CEMG
               </CardDescription>
             </CardHeader>
             <div className="space-y-3">

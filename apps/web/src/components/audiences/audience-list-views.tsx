@@ -15,6 +15,7 @@ const KANBAN_COLUMNS: AudienceStatus[] = [
   'PLANIFIEE',
   'CONFIRMEE',
   'DEJA_ENVOYE',
+  'TRANSMIS_DIRCAB',
   'REJETEE',
   'TERMINEE',
   'ARCHIVEE',
@@ -25,6 +26,14 @@ const TABLE_PAGE_SIZES = [10, 20, 50] as const;
 function visitTargetLabel(audience: Audience) {
   if (!audience.visitTarget) return '—';
   return `${audience.visitTarget.firstName} ${audience.visitTarget.lastName}`;
+}
+
+function visitTargetOrgLabel(audience: Audience) {
+  const target = audience.visitTarget;
+  if (!target) return '—';
+  if (target.cabinet?.name) return target.cabinet.name;
+  if (target.bureau?.name) return target.bureau.name;
+  return '—';
 }
 
 interface AudienceKanbanViewProps {
@@ -96,6 +105,7 @@ interface AudienceTableViewProps {
   pageSize: number;
   onPageChange: (page: number) => void;
   onPageSizeChange: (size: number) => void;
+  showOrgColumn?: boolean;
 }
 
 export function AudienceTableView({
@@ -104,6 +114,7 @@ export function AudienceTableView({
   pageSize,
   onPageChange,
   onPageSizeChange,
+  showOrgColumn = false,
 }: AudienceTableViewProps) {
   const total = audiences.length;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
@@ -129,6 +140,9 @@ export function AudienceTableView({
                 <th className="px-4 py-3 text-[10px] uppercase tracking-wider text-cream/40 font-medium">Référence</th>
                 <th className="px-4 py-3 text-[10px] uppercase tracking-wider text-cream/40 font-medium">Demandeur</th>
                 <th className="px-4 py-3 text-[10px] uppercase tracking-wider text-cream/40 font-medium">Personne à voir</th>
+                {showOrgColumn ? (
+                  <th className="px-4 py-3 text-[10px] uppercase tracking-wider text-cream/40 font-medium">Cabinet / Bureau</th>
+                ) : null}
                 <th className="px-4 py-3 text-[10px] uppercase tracking-wider text-cream/40 font-medium">Objet</th>
                 <th className="px-4 py-3 text-[10px] uppercase tracking-wider text-cream/40 font-medium">Priorité</th>
                 <th className="px-4 py-3 text-[10px] uppercase tracking-wider text-cream/40 font-medium">Statut</th>
@@ -154,6 +168,9 @@ export function AudienceTableView({
                     {aud.grade ? <p className="text-xs text-cream/40">{aud.grade}</p> : null}
                   </td>
                   <td className="px-4 py-3 text-cream/70">{visitTargetLabel(aud)}</td>
+                  {showOrgColumn ? (
+                    <td className="px-4 py-3 text-cream/60 text-xs">{visitTargetOrgLabel(aud)}</td>
+                  ) : null}
                   <td className="px-4 py-3 max-w-[220px]">
                     <Link
                       href={`/audiences/${aud.id}`}

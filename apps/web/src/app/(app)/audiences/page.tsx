@@ -2,8 +2,8 @@
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { motion } from 'framer-motion';
-import { Search, Plus, Filter, Clock, LayoutGrid, Table2, Navigation, BellRing } from 'lucide-react';
+import { Search, Plus, Filter, LayoutGrid, Table2 } from 'lucide-react';
+import { WaitingRoomView } from '@/components/monitoring/waiting-room-view';
 import { AuthGuard } from '@/components/auth/auth-guard';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -15,19 +15,21 @@ import {
   type AudienceListViewMode,
 } from '@/components/audiences/audience-list-views';
 import { useAudiencesStore } from '@/stores/audiences-store';
-import { useAuthStore, canCreateAudience, canFilterAudiencesByPriority, canAccompanyAudience, isWaitingRoomRole } from '@/stores/auth-store';
-import { PRIORITY_LABELS, STATUS_LABELS, ROLE_LABELS, type UserRole } from '@/types';
+import { useAuthStore, canCreateAudience, canFilterAudiencesByPriority, canAccompanyAudience, canCompleteAudience, isWaitingRoomRole } from '@/stores/auth-store';
+import { PRIORITY_LABELS, STATUS_LABELS } from '@/types';
 import {
   completeAccompanimentApi,
+  completeReceptionApi,
   listAccompanimentPendingApi,
+  listBureausApi,
+  listCabinetsApi,
+  listReceptionsPendingApi,
   type AccompanimentPendingApiRecord,
+  type OrgUnit,
+  type ReceptionPendingApiRecord,
 } from '@/lib/api-client';
 import { notifyAudienceSync, subscribeAudienceSync } from '@/lib/audience-sync-bus';
-import { isCemgPilotageAudience } from '@/lib/audience-utils';
-
-function formatTime(iso: string) {
-  return new Date(iso).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
-}
+import { filterAudiencesByOrgUnit, isCemgPilotageAudience } from '@/lib/audience-utils';
 
 function readStoredViewMode(): AudienceListViewMode {
   if (typeof window === 'undefined') return 'table';
@@ -42,13 +44,19 @@ export default function AudiencesPage() {
   const { user, permissions, accessToken } = useAuthStore();
   const canCreate = canCreateAudience(user?.role, permissions);
   const canAccompany = canAccompanyAudience(user?.role, permissions);
+  const canCompleteReception = canCompleteAudience(user?.role, permissions);
   const isWaitingRoom = isWaitingRoomRole(user?.role);
+  const isAdmin = user?.role === 'ADMIN';
   const canFilterByPriority = canFilterAudiencesByPriority(user?.role);
   const searchParams = useSearchParams();
 
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [priorityFilter, setPriorityFilter] = useState<string>('ALL');
+  const [cabinetFilter, setCabinetFilter] = useState<string>('ALL');
+  const [bureauFilter, setBureauFilter] = useState<string>('ALL');
+  const [cabinets, setCabinets] = useState<OrgUnit[]>([]);
+  const [bureaus, setBureaus] = useState<OrgUnit[]>([]);
   const [modalOpen, setModalOpen] = useState(false);
   const [viewMode, setViewMode] = useState<AudienceListViewMode>('table');
   const [tablePage, setTablePage] = useState(1);
@@ -57,6 +65,10 @@ export default function AudiencesPage() {
   const [loadingAccompaniment, setLoadingAccompaniment] = useState(false);
   const [accompanyingId, setAccompanyingId] = useState<string | null>(null);
   const [accompanimentError, setAccompanimentError] = useState('');
+  const [receptionsPending, setReceptionsPending] = useState<ReceptionPendingApiRecord[]>([]);
+  const [loadingReceptions, setLoadingReceptions] = useState(false);
+  const [completingReceptionId, setCompletingReceptionId] = useState<string | null>(null);
+  const [receptionError, setReceptionError] = useState('');
 
   const loadAccompanimentPending = useCallback(async (silent = false) => {
     if (!accessToken || !canAccompany) return;
@@ -74,10 +86,31 @@ export default function AudiencesPage() {
     }
   }, [accessToken, canAccompany]);
 
+  const loadReceptionsPending = useCallback(async (silent = false) => {
+    if (!accessToken || !canCompleteReception || !isWaitingRoom) return;
+    if (!silent) setLoadingReceptions(true);
+    try {
+      const list = await listReceptionsPendingApi(accessToken);
+      setReceptionsPending(list);
+      setReceptionError('');
+    } catch (err) {
+      if (!silent) {
+        setReceptionError(err instanceof Error ? err.message : 'Impossible de charger les réceptions en attente');
+      }
+    } finally {
+      if (!silent) setLoadingReceptions(false);
+    }
+  }, [accessToken, canCompleteReception, isWaitingRoom]);
+
   useEffect(() => {
     if (!isWaitingRoom || !canAccompany || !accessToken) return;
     void loadAccompanimentPending();
   }, [isWaitingRoom, canAccompany, accessToken, loadAccompanimentPending]);
+
+  useEffect(() => {
+    if (!isWaitingRoom || !canCompleteReception || !accessToken) return;
+    void loadReceptionsPending();
+  }, [isWaitingRoom, canCompleteReception, accessToken, loadReceptionsPending]);
 
   useEffect(() => {
     if (!isWaitingRoom || !canAccompany || !accessToken) return;
@@ -88,20 +121,37 @@ export default function AudiencesPage() {
   }, [isWaitingRoom, canAccompany, accessToken, loadAccompanimentPending]);
 
   useEffect(() => {
-    if (!canAccompany || !accessToken) return;
+    if (!isWaitingRoom || !canCompleteReception || !accessToken) return;
+    const interval = setInterval(() => {
+      void loadReceptionsPending(true);
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [isWaitingRoom, canCompleteReception, accessToken, loadReceptionsPending]);
+
+  useEffect(() => {
+    if (!accessToken) return;
     return subscribeAudienceSync((event) => {
       if (event.type === 'reception-completed' && event.audienceId) {
         setAccompanimentPending((prev) => prev.filter((a) => a.id !== event.audienceId));
+        setReceptionsPending((prev) => prev.filter((a) => a.id !== event.audienceId));
       }
       if (
         event.type === 'confirmed' ||
         event.type === 'reception-completed' ||
         event.type === 'accompaniment-completed'
       ) {
-        void loadAccompanimentPending(true);
+        if (canAccompany) void loadAccompanimentPending(true);
+        if (isWaitingRoom && canCompleteReception) void loadReceptionsPending(true);
       }
     });
-  }, [canAccompany, accessToken, loadAccompanimentPending]);
+  }, [
+    accessToken,
+    canAccompany,
+    canCompleteReception,
+    isWaitingRoom,
+    loadAccompanimentPending,
+    loadReceptionsPending,
+  ]);
 
   const handleCompleteAccompaniment = async (audienceId: string) => {
     if (!accessToken) return;
@@ -112,6 +162,7 @@ export default function AudiencesPage() {
       await completeAccompanimentApi(accessToken, audienceId);
       setAccompanimentPending((prev) => prev.filter((a) => a.id !== audienceId));
       notifyAudienceSync({ type: 'accompaniment-completed', audienceId });
+      void loadReceptionsPending(true);
     } catch (err) {
       setAccompanimentError(
         err instanceof Error ? err.message : 'Impossible de confirmer l\'accompagnement.',
@@ -122,17 +173,23 @@ export default function AudiencesPage() {
     }
   };
 
-  const formatBureau = (aud: AccompanimentPendingApiRecord) => {
-    const person = aud.visitTarget
-      ? `${aud.visitTarget.firstName} ${aud.visitTarget.lastName}`
-      : 'Bureau non renseigné';
-    const role = aud.visitTarget?.role
-      ? ROLE_LABELS[aud.visitTarget.role as UserRole] ?? aud.visitTarget.role
-      : null;
-    const room = aud.room
-      ? `${aud.room.name}${aud.room.floor ? ` · ${aud.room.floor}` : ''}`
-      : null;
-    return { person, role, room };
+  const handleCompleteReception = async (audienceId: string) => {
+    if (!accessToken) return;
+
+    setReceptionError('');
+    setCompletingReceptionId(audienceId);
+    try {
+      await completeReceptionApi(accessToken, audienceId);
+      setReceptionsPending((prev) => prev.filter((a) => a.id !== audienceId));
+      notifyAudienceSync({ type: 'reception-completed', audienceId });
+    } catch (err) {
+      setReceptionError(
+        err instanceof Error ? err.message : 'Impossible de confirmer la réception.',
+      );
+      void loadReceptionsPending(true);
+    } finally {
+      setCompletingReceptionId(null);
+    }
   };
 
   useEffect(() => {
@@ -143,11 +200,29 @@ export default function AudiencesPage() {
     if (searchParams.get('new') === '1' && canCreate) setModalOpen(true);
   }, [searchParams, canCreate]);
 
+  useEffect(() => {
+    if (!isAdmin || !accessToken) return;
+    void Promise.all([listCabinetsApi(accessToken), listBureausApi(accessToken)])
+      .then(([cabinetList, bureauList]) => {
+        setCabinets(cabinetList);
+        setBureaus(bureauList);
+      })
+      .catch(() => {
+        setCabinets([]);
+        setBureaus([]);
+      });
+  }, [isAdmin, accessToken]);
+
   const filtered = useMemo(() => {
     const source =
       user?.role === 'CEMG'
         ? audiences.filter((a) => isCemgPilotageAudience(a, user.role))
-        : audiences;
+        : isAdmin
+          ? filterAudiencesByOrgUnit(audiences, {
+              cabinetId: cabinetFilter === 'ALL' ? undefined : cabinetFilter,
+              bureauId: bureauFilter === 'ALL' ? undefined : bureauFilter,
+            })
+          : audiences;
 
     const list = source.filter((a) => {
       const matchSearch =
@@ -167,11 +242,11 @@ export default function AudiencesPage() {
     return [...list].sort(
       (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
     );
-  }, [audiences, search, statusFilter, priorityFilter, canFilterByPriority, user?.role]);
+  }, [audiences, search, statusFilter, priorityFilter, canFilterByPriority, user?.role, isAdmin, cabinetFilter, bureauFilter]);
 
   useEffect(() => {
     setTablePage(1);
-  }, [search, statusFilter, priorityFilter, viewMode, tablePageSize]);
+  }, [search, statusFilter, priorityFilter, cabinetFilter, bureauFilter, viewMode, tablePageSize]);
 
   const handleViewModeChange = (mode: AudienceListViewMode) => {
     setViewMode(mode);
@@ -186,12 +261,18 @@ export default function AudiencesPage() {
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold">
-              {isWaitingRoom ? 'Enregistrement des audiences' : 'Gestion des audiences'}
+              {isWaitingRoom
+                ? "Salle d'attente & Enregistrement des audiences"
+                : isAdmin
+                  ? 'Vue d\'ensemble des audiences'
+                  : 'Gestion des audiences'}
             </h1>
             <p className="text-cream/50 text-sm mt-1">
               {isWaitingRoom
                 ? `${waitingRoomToday.length} enregistrement(s) aujourd'hui`
-                : `${filtered.length} demande(s)`}
+                : isAdmin
+                  ? `${filtered.length} audience(s) affichée(s) sur ${audiences.length} au total — ${filtered.filter((a) => !['TERMINEE', 'REJETEE', 'ARCHIVEE'].includes(a.status)).length} active(s)`
+                  : `${filtered.length} demande(s)`}
             </p>
           </div>
           {canCreate ? (
@@ -202,139 +283,24 @@ export default function AudiencesPage() {
         </div>
 
         {isWaitingRoom ? (
-          <>
-            {canAccompany ? (
-              <div className="space-y-3">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex items-center gap-2">
-                    <BellRing className="w-5 h-5 text-gold-400" />
-                    <h2 className="text-lg font-semibold">Audiences validées — à accompagner</h2>
-                  </div>
-                  <p className="text-xs text-cream/40">
-                    {loadingAccompaniment ? '…' : `${accompanimentPending.length} en attente d'accompagnement`}
-                  </p>
-                </div>
-                <Card className="!p-4 border-gold-500/20 bg-gold-500/5">
-                  <p className="text-sm text-cream/70 mb-4">
-                    Dès qu&apos;une audience est confirmée par le Protocol, elle apparaît ici. Accompagnez le demandeur
-                    jusqu&apos;au bureau de la personne à voir, puis confirmez l&apos;accompagnement.
-                  </p>
-                  {accompanimentError ? (
-                    <p className="text-sm text-red-400 mb-3 rounded-lg border border-red-900/40 bg-red-950/30 px-3 py-2">
-                      {accompanimentError}
-                    </p>
-                  ) : null}
-                  {loadingAccompaniment && accompanimentPending.length === 0 ? (
-                    <p className="text-sm text-cream/40 text-center py-6">Chargement…</p>
-                  ) : accompanimentPending.length === 0 ? (
-                    <p className="text-sm text-cream/40 text-center py-6">
-                      Aucune audience confirmée par le Protocol en attente pour le moment.
-                    </p>
-                  ) : (
-                    <div className="space-y-2">
-                      {accompanimentPending.map((aud) => {
-                        const bureau = formatBureau(aud);
-                        return (
-                          <Card
-                            key={aud.id}
-                            className="!p-4 border-military-600/40 bg-military-950/30 ring-1 ring-gold-500/10"
-                          >
-                            <div className="flex flex-wrap items-start gap-4">
-                              <div className="font-mono text-sm text-gold-400 w-36 shrink-0">{aud.reference}</div>
-                              <div className="flex-1 min-w-[200px]">
-                                <p className="font-semibold text-cream">{aud.requesterName}</p>
-                                <p className="text-xs text-cream/45 mt-0.5 line-clamp-1">{aud.subject}</p>
-                                <div className="mt-2 flex items-start gap-2 text-sm text-military-300">
-                                  <Navigation className="w-4 h-4 shrink-0 mt-0.5 text-gold-400" />
-                                  <div>
-                                    <p className="font-medium">{bureau.person}</p>
-                                    {bureau.role ? (
-                                      <p className="text-[11px] text-cream/40">{bureau.role}</p>
-                                    ) : null}
-                                    {bureau.room ? (
-                                      <p className="text-[11px] text-cream/35">Salle : {bureau.room}</p>
-                                    ) : null}
-                                  </div>
-                                </div>
-                              </div>
-                              {aud.priority === 'PRIORITE_0' || aud.priority === 'CRITIQUE' ? (
-                                <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded border border-amber-600/40 text-amber-300 shrink-0">
-                                  {PRIORITY_LABELS[aud.priority as keyof typeof PRIORITY_LABELS]}
-                                </span>
-                              ) : null}
-                              <div className="flex flex-col items-end gap-2 shrink-0">
-                                <span className="text-[10px] text-cream/35">
-                                  Confirmée à {formatTime(aud.validatedAt)}
-                                </span>
-                                <Button
-                                  size="sm"
-                                  variant="gold"
-                                  disabled={accompanyingId === aud.id}
-                                  onClick={() => void handleCompleteAccompaniment(aud.id)}
-                                >
-                                  <Navigation className="w-3.5 h-3.5" />
-                                  {accompanyingId === aud.id ? '…' : 'Accompagné au bureau'}
-                                </Button>
-                              </div>
-                            </div>
-                          </Card>
-                        );
-                      })}
-                    </div>
-                  )}
-                </Card>
-              </div>
-            ) : null}
-
-            <Card className="!p-4 border-military-800/40 bg-military-950/20">
-              <p className="text-sm text-cream/60">
-                Vos enregistrements du jour apparaissent ci-dessous. Les audiences validées sont signalées
-                en haut de page pour accompagnement au bureau concerné.
-              </p>
-            </Card>
-
-            <div className="space-y-3">
-              <h2 className="text-lg font-semibold">Enregistrements du jour</h2>
-              {isSyncing && waitingRoomToday.length === 0 ? (
-                <Card className="text-center py-12 text-cream/40">Chargement…</Card>
-              ) : waitingRoomToday.length === 0 ? (
-                <Card className="text-center py-12 text-cream/40">
-                  Aucun enregistrement aujourd&apos;hui.{' '}
-                  <button type="button" onClick={() => setModalOpen(true)} className="text-military-400 hover:underline cursor-pointer">
-                    Enregistrer une demande
-                  </button>
-                </Card>
-              ) : (
-                waitingRoomToday.map((aud, i) => (
-                  <motion.div
-                    key={aud.id}
-                    initial={{ opacity: 0, x: -10 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: i * 0.05 }}
-                  >
-                    <Card className="!p-4 border-carbon-700/50">
-                      <div className="flex flex-wrap items-center gap-4">
-                        <div className="font-mono text-sm text-military-400 w-36 shrink-0">{aud.reference}</div>
-                        <div className="flex-1 min-w-[200px]">
-                          <p className="font-medium">{aud.subject}</p>
-                          <p className="text-xs text-cream/40">{aud.requesterName}</p>
-                        </div>
-                        {aud.priority === 'PRIORITE_0' ? (
-                          <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded border border-carbon-600/50 text-cream/50 shrink-0">
-                            {PRIORITY_LABELS.PRIORITE_0}
-                          </span>
-                        ) : null}
-                        <div className="flex items-center gap-1.5 text-xs text-cream/40 shrink-0">
-                          <Clock className="w-3.5 h-3.5" />
-                          {formatTime(aud.createdAt)}
-                        </div>
-                      </div>
-                    </Card>
-                  </motion.div>
-                ))
-              )}
-            </div>
-          </>
+          <WaitingRoomView
+            waitingRoomToday={waitingRoomToday}
+            isSyncing={isSyncing}
+            canCreate={canCreate}
+            canAccompany={canAccompany}
+            canCompleteReception={canCompleteReception}
+            accompanimentPending={accompanimentPending}
+            loadingAccompaniment={loadingAccompaniment}
+            accompanimentError={accompanimentError}
+            accompanyingId={accompanyingId}
+            onCompleteAccompaniment={(id) => void handleCompleteAccompaniment(id)}
+            receptionsPending={receptionsPending}
+            loadingReceptions={loadingReceptions}
+            receptionError={receptionError}
+            completingReceptionId={completingReceptionId}
+            onCompleteReception={(id) => void handleCompleteReception(id)}
+            onNewAudience={() => setModalOpen(true)}
+          />
         ) : (
           <>
             <Card className="!p-4">
@@ -374,6 +340,32 @@ export default function AudiencesPage() {
                         <option key={k} value={k}>{v}</option>
                       ))}
                     </select>
+                  ) : null}
+                  {isAdmin ? (
+                    <>
+                      <select
+                        value={cabinetFilter}
+                        onChange={(e) => setCabinetFilter(e.target.value)}
+                        aria-label="Filtrer par cabinet"
+                        className="h-10 px-3 rounded-xl bg-carbon-800 border border-carbon-600 text-sm focus:outline-none focus:border-military-500"
+                      >
+                        <option value="ALL">Tous les cabinets</option>
+                        {cabinets.map((cabinet) => (
+                          <option key={cabinet.id} value={cabinet.id}>{cabinet.name}</option>
+                        ))}
+                      </select>
+                      <select
+                        value={bureauFilter}
+                        onChange={(e) => setBureauFilter(e.target.value)}
+                        aria-label="Filtrer par bureau"
+                        className="h-10 px-3 rounded-xl bg-carbon-800 border border-carbon-600 text-sm focus:outline-none focus:border-military-500"
+                      >
+                        <option value="ALL">Tous les bureaux</option>
+                        {bureaus.map((bureau) => (
+                          <option key={bureau.id} value={bureau.id}>{bureau.name}</option>
+                        ))}
+                      </select>
+                    </>
                   ) : null}
                 </div>
 
@@ -424,6 +416,7 @@ export default function AudiencesPage() {
                 pageSize={tablePageSize}
                 onPageChange={setTablePage}
                 onPageSizeChange={setTablePageSize}
+                showOrgColumn={isAdmin}
               />
             )}
           </>

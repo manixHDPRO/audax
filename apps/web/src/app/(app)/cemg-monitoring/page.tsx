@@ -7,7 +7,9 @@ import { CemgMonitoringView } from '@/components/monitoring/cemg-monitoring-view
 import {
   useAuthStore,
   canAccessAdminCommandCenter,
+  canAccessCabinetMonitoring,
   canAccessCemgMonitoring,
+  getDefaultAppRoute,
 } from '@/stores/auth-store';
 
 export default function CemgMonitoringPage() {
@@ -19,12 +21,17 @@ export default function CemgMonitoringPage() {
 
     if (canAccessCemgMonitoring(user.role, permissions)) return;
 
+    if (canAccessCabinetMonitoring(user.role, permissions)) {
+      router.replace('/cabinet-monitoring');
+      return;
+    }
+
     if (canAccessAdminCommandCenter(user.role, permissions)) {
       router.replace('/command-center');
       return;
     }
 
-    router.replace('/dashboard');
+    router.replace(getDefaultAppRoute(user.role, permissions));
   }, [user, permissions, router]);
 
   if (!canAccessCemgMonitoring(user?.role, permissions)) return null;

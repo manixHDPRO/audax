@@ -23,6 +23,12 @@ import { useAudiencesStore } from '@/stores/audiences-store';
 import { formatDate, formatDateShort, cn } from '@/lib/utils';
 import { confirmAudienceApi, completeReceptionApi, forwardToDircabApi } from '@/lib/api-client';
 import { notifyAudienceSync } from '@/lib/audience-sync-bus';
+import {
+  isProtocolCemgCabinetTracking,
+  isProtocolCemgConfirmQueue,
+  isProtocolCemgReceptionQueue,
+  isCemgRelatedAudience,
+} from '@/lib/audience-utils';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import Link from 'next/link';
 
@@ -46,24 +52,35 @@ export default function ProtocolTrackingPage() {
   , [audiences, selectedAudienceId]);
 
   // 0. Audiences en attente de transmission au Cabinet
-  const toForward = useMemo(() => 
-    audiences.filter(a => a.status === 'EN_ATTENTE')
-  , [audiences]);
+  const toForward = useMemo(
+    () =>
+      audiences.filter(
+        (a) => a.status === 'EN_ATTENTE' && isCemgRelatedAudience(a),
+      ),
+    [audiences],
+  );
 
-  // 0.5 Audiences actuellement au Cabinet (Analyse DirCab)
-  const atCabinet = useMemo(() => 
-    audiences.filter(a => (a.status === 'DEJA_ENVOYE' || a.status === 'EN_ANALYSE'))
-  , [audiences]);
+  // 0.5 Audiences au circuit CEMG — suivi Protocol (hors validations Chef de Cabinet)
+  const atCabinet = useMemo(
+    () => audiences.filter((a) => isProtocolCemgCabinetTracking(a)),
+    [audiences],
+  );
 
-  // 1. Audiences validées par CEMG -> à confirmer par Protocol
-  const toConfirm = useMemo(() => 
-    audiences.filter(a => (a.status === 'VALIDEE' || a.status === 'PLANIFIEE'))
-  , [audiences]);
+  // 1. Audiences validées par le CEMG → suivi Protocol uniquement
+  const toConfirm = useMemo(
+    () => audiences.filter((a) => isProtocolCemgConfirmQueue(a)),
+    [audiences],
+  );
 
-  // 2. Audiences confirmées -> en attente de réception
-  const toReceive = useMemo(() => 
-    audiences.filter(a => a.status === 'CONFIRMEE')
-  , [audiences]);
+  // 2. Audiences CEMG confirmées → réception Protocol (après accompagnement salle)
+  const toReceive = useMemo(
+    () =>
+      audiences.filter((a) => {
+        if (!isProtocolCemgReceptionQueue(a)) return false;
+        return a.statusHistory?.some((e) => e.comment?.startsWith('Accompagné au bureau'));
+      }),
+    [audiences],
+  );
 
   // 3. Agenda du jour
   const todayAgenda = useMemo(() => {
@@ -138,7 +155,7 @@ export default function ProtocolTrackingPage() {
     {
       id: 'confirm',
       label: 'Suivi CEMG — À confirmer',
-      description: 'Audiences validées par le Chef d\'Etat Major — Confirmation requise pour accompagnement',
+      description: 'Audiences validées par le CEMG — confirmation Protocol pour accompagnement',
       count: filteredToConfirm.length,
       borderClass: 'border-amber-500/20',
       accentClass: 'text-amber-500',
@@ -147,8 +164,8 @@ export default function ProtocolTrackingPage() {
     },
     {
       id: 'reception',
-      label: 'En cours / En attente de réception',
-      description: 'Audiences confirmées — En attente de confirmation de réception par le CEMG',
+      label: 'Réception CEMG',
+      description: 'Audiences CEMG accompagnées — confirmation de réception par le Protocol',
       count: filteredToReceive.length,
       borderClass: 'border-gold-500/20',
       accentClass: 'text-gold-500',
@@ -219,7 +236,7 @@ export default function ProtocolTrackingPage() {
               </div>
             </div>
           </div>
-        )) : renderEmptyState('Aucun dossier au cabinet');
+        )) : renderEmptyState('Aucune audience au cabinet');
 
       case 'confirm':
         return filteredToConfirm.length ? filteredToConfirm.map((aud) => (
@@ -472,7 +489,7 @@ export default function ProtocolTrackingPage() {
                     {currentTab.label}
                   </CardTitle>
                   <span className={cn('text-[10px] font-mono uppercase tracking-widest', currentTab.badgeClass)}>
-                    {currentTab.count} DOSSIER{currentTab.count !== 1 ? 'S' : ''}
+                    {currentTab.count} AUDIENCE{currentTab.count !== 1 ? 'S' : ''}
                   </span>
                 </div>
                 <CardDescription className="text-[10px] font-mono uppercase tracking-wider mt-1">

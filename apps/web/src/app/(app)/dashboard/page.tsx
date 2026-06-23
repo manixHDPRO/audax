@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect } from 'react';
 import { motion } from 'framer-motion';
 import Link from 'next/link';
 import {
@@ -12,36 +13,77 @@ import {
   Activity,
   Shield,
   Users,
+  Layers,
+  Archive,
 } from 'lucide-react';
 import { AuthGuard } from '@/components/auth/auth-guard';
 import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { StatusBadge, PriorityBadge } from '@/components/ui/badge';
 import { formatDateShort, cn } from '@/lib/utils';
-import { isCemgCabinetHistoryAudience, isInCemgWaitingQueue } from '@/lib/audience-utils';
+import { isApiConfigured } from '@/lib/api-config';
+import {
+  isCemgCabinetHistoryAudience,
+  isCemgPilotageAudience,
+  getCommandDashboardMetricsPool,
+  getCommandDashboardStatCounts,
+  getAdminAudienceOverviewStats,
+  getAdminOperationalAudiences,
+} from '@/lib/audience-utils';
 import { useAudiencesStore } from '@/stores/audiences-store';
 import { useAuthStore } from '@/stores/auth-store';
-import type { Audience } from '@/types';
-
-function countByStatus(audiences: Audience[], status: Audience['status']) {
-  return audiences.filter((a) => a.status === status).length;
-}
 
 export default function DashboardPage() {
   const audiences = useAudiencesStore((s) => s.audiences);
-  const user = useAuthStore((s) => s.user);
-  const isCemg = user?.role === 'CEMG';
+  const isSyncing = useAudiencesStore((s) => s.isSyncing);
+  const lastSyncedAt = useAudiencesStore((s) => s.lastSyncedAt);
+  const syncFromApi = useAudiencesStore((s) => s.syncFromApi);
+  const { user, accessToken } = useAuthStore();
+  const role = user?.role;
+  const isCemg = role === 'CEMG';
+  const isAdmin = role === 'ADMIN';
+  const adminOverview = isAdmin ? getAdminAudienceOverviewStats(audiences) : null;
 
-  const waitingPool = audiences.filter((a) => isInCemgWaitingQueue(a, user?.role));
+  useEffect(() => {
+    if (!accessToken || !isApiConfigured()) return;
+
+    let cancelled = false;
+    const run = async (attempt = 0) => {
+      const ok = await syncFromApi(accessToken, { silent: attempt > 0 });
+      if (cancelled || ok || attempt >= 3) return;
+      window.setTimeout(() => void run(attempt + 1), 1500);
+    };
+
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [accessToken, syncFromApi]);
+
+  const metricsPool = getCommandDashboardMetricsPool(audiences, role);
+  const stats = getCommandDashboardStatCounts(audiences, role);
+  const pilotageAudiences = isAdmin
+    ? audiences
+    : isCemg
+      ? audiences.filter((a) => isCemgPilotageAudience(a, 'CEMG'))
+      : metricsPool;
   const cemgHistory = isCemg
     ? audiences.filter((a) => isCemgCabinetHistoryAudience(a, user?.role))
     : [];
 
-  const statCards = [
-    { label: 'En attente', value: countByStatus(waitingPool, 'EN_ATTENTE') + countByStatus(waitingPool, 'DEJA_ENVOYE'), icon: Clock, color: 'text-amber-400', glow: false },
-    { label: 'En analyse', value: countByStatus(waitingPool, 'EN_ANALYSE'), icon: Activity, color: 'text-blue-400', glow: false },
-    { label: 'Validées', value: countByStatus(waitingPool, 'VALIDEE'), icon: CheckCircle2, color: 'text-military-400', glow: false },
-    { label: 'Critiques', value: waitingPool.filter((a) => a.priority === 'CRITIQUE').length, icon: AlertTriangle, color: 'text-red-400', glow: true },
-  ];
+  const statCards = isAdmin && adminOverview
+    ? [
+        { label: 'Total audiences', value: adminOverview.total, icon: Layers, color: 'text-cream', glow: false },
+        { label: 'En cours', value: adminOverview.active, icon: Activity, color: 'text-military-400', glow: adminOverview.active > 0 },
+        { label: 'En attente', value: adminOverview.pending, icon: Clock, color: 'text-amber-400', glow: adminOverview.pending > 0 },
+        { label: 'Validées', value: adminOverview.validated, icon: CheckCircle2, color: 'text-military-300', glow: adminOverview.validated > 0 },
+        { label: 'Terminées', value: adminOverview.completed, icon: Archive, color: 'text-cream/60', glow: false },
+      ]
+    : [
+        { label: 'En attente', value: stats.pending, icon: Clock, color: 'text-amber-400', glow: stats.pending > 0 },
+        { label: 'En analyse', value: stats.inAnalysis, icon: Activity, color: 'text-blue-400', glow: false },
+        { label: 'Validées', value: stats.validated, icon: CheckCircle2, color: 'text-military-400', glow: false },
+        { label: 'Critiques', value: stats.critical, icon: AlertTriangle, color: 'text-red-400', glow: stats.critical > 0 },
+      ];
 
   const isToday = (dateStr?: string | null) => {
     if (!dateStr) return false;
@@ -50,22 +92,23 @@ export default function DashboardPage() {
     return d.toLocaleDateString('fr-FR') === now.toLocaleDateString('fr-FR');
   };
 
-  const operationTime = (aud: Audience) => new Date(aud.scheduledAt ?? aud.createdAt).getTime();
+  const operationTime = (aud: typeof audiences[number]) =>
+    new Date(aud.scheduledAt ?? aud.createdAt).getTime();
 
-  const displayAudiences = audiences;
-
-  const visibleAudiences = waitingPool.filter((a) =>
-    ['EN_ATTENTE', 'DEJA_ENVOYE', 'EN_ANALYSE', 'PLANIFIEE', 'VALIDEE', 'CONFIRMEE'].includes(a.status)
-  );
+  const visibleAudiences = isAdmin
+    ? getAdminOperationalAudiences(audiences)
+    : metricsPool.filter((a) =>
+        ['EN_ATTENTE', 'DEJA_ENVOYE', 'EN_ANALYSE', 'PLANIFIEE', 'VALIDEE', 'CONFIRMEE'].includes(a.status),
+      );
   const priority0 = visibleAudiences.filter((a) => a.priority === 'PRIORITE_0');
   const otherAudiences = visibleAudiences.filter((a) => a.priority !== 'PRIORITE_0');
 
-  /** Opérations du jour : enregistrements et audiences reprogrammées pour aujourd'hui. */
-  const todayOperations = displayAudiences
+  /** Opérations du jour : périmètre pilotage / métriques du rôle. */
+  const todayOperations = pilotageAudiences
     .filter((a) => isToday(a.createdAt) || (a.scheduledAt && isToday(a.scheduledAt)))
     .sort((a, b) => operationTime(a) - operationTime(b));
 
-  const today = displayAudiences.filter((a) => a.scheduledAt && isToday(a.scheduledAt));
+  const today = pilotageAudiences.filter((a) => a.scheduledAt && isToday(a.scheduledAt));
 
   return (
     <AuthGuard>
@@ -77,10 +120,16 @@ export default function DashboardPage() {
         >
           <div>
             <h1 className="text-3xl lg:text-4xl font-bold text-cream tracking-tight uppercase font-display">
-              Command <span className="text-military-500">Dashboard</span>
+              {isAdmin ? (
+                <>Vue d&apos;ensemble <span className="text-military-500">Administration</span></>
+              ) : (
+                <>Command <span className="text-military-500">Dashboard</span></>
+              )}
             </h1>
             <p className="text-military-400/60 mt-1 font-mono text-xs tracking-[0.2em] uppercase">
-              Système de Gestion Stratégique — Cabinet Chef EMG
+              {isAdmin
+                ? 'Situation générale — l\'ensemble des audiences du système'
+                : 'Système de Gestion Stratégique — Cabinet Chef EMG'}
             </p>
           </div>
           <div className="text-right">
@@ -92,8 +141,13 @@ export default function DashboardPage() {
         </motion.div>
 
         {/* KPI Grid */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
-          {statCards.map((stat, i) => (
+        <div className={cn('grid gap-6', isAdmin ? 'grid-cols-2 md:grid-cols-3 xl:grid-cols-5' : 'grid-cols-2 lg:grid-cols-4')}>
+          {isSyncing && !lastSyncedAt ? (
+            <div className="col-span-full py-8 text-center text-cream/40 text-sm font-mono uppercase tracking-widest">
+              Chargement des indicateurs…
+            </div>
+          ) : (
+          statCards.map((stat, i) => (
             <motion.div
               key={stat.label}
               initial={{ opacity: 0, y: 20 }}
@@ -130,7 +184,7 @@ export default function DashboardPage() {
                 </div>
               </Card>
             </motion.div>
-          ))}
+          )))}
         </div>
 
         <div className="grid lg:grid-cols-3 gap-8">
@@ -141,10 +195,12 @@ export default function DashboardPage() {
                 <div>
                   <CardTitle className="text-xl flex items-center gap-3">
                     <div className="w-2 h-6 bg-military-500 rounded-full animate-pulse" />
-                    Audiences en Attente / Réprogrammées
+                    {isAdmin ? 'Audiences en cours — tous circuits' : 'Audiences en Attente / Réprogrammées'}
                   </CardTitle>
                   <CardDescription className="font-mono text-[10px] uppercase tracking-wider mt-1">
-                    Supervision des dossiers prioritaires et planifiés
+                    {isAdmin
+                      ? `${adminOverview?.active ?? 0} actives sur ${adminOverview?.total ?? 0} audiences enregistrées`
+                      : 'Supervision des audiences prioritaires et planifiées'}
                   </CardDescription>
                 </div>
                 <Link href="/audiences" className="px-4 py-2 rounded-lg glass border-military-700/30 text-[10px] font-bold text-military-400 hover:text-military-300 hover:border-military-500 transition-all uppercase tracking-widest flex items-center gap-2">
@@ -182,7 +238,7 @@ export default function DashboardPage() {
                       </Link>
                     )) : (
                       <div className="py-8 text-center border border-dashed border-military-800/30 rounded-xl opacity-20">
-                        <p className="text-[10px] font-mono uppercase tracking-widest">Aucun dossier P0</p>
+                        <p className="text-[10px] font-mono uppercase tracking-widest">Aucune audience P0</p>
                       </div>
                     )}
                   </div>
@@ -220,7 +276,7 @@ export default function DashboardPage() {
                       </Link>
                     )) : (
                       <div className="py-8 text-center border border-dashed border-military-800/30 rounded-xl opacity-20">
-                        <p className="text-[10px] font-mono uppercase tracking-widest">Aucun autre dossier</p>
+                        <p className="text-[10px] font-mono uppercase tracking-widest">Aucune autre audience</p>
                       </div>
                     )}
                   </div>
@@ -238,7 +294,7 @@ export default function DashboardPage() {
                     Historique — Délégations au Cabinet
                   </CardTitle>
                   <CardDescription className="font-mono text-[10px] uppercase tracking-wider">
-                    Dossiers transmis au Chef de Cabinet — consultation et traçabilité
+                    Audiences transmises au Chef de Cabinet — consultation et traçabilité
                   </CardDescription>
                 </CardHeader>
                 <div className="space-y-3 max-h-[320px] overflow-y-auto pr-1">

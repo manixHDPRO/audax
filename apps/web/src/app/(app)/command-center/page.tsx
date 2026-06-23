@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { motion } from 'framer-motion';
 import {
   Radio,
@@ -12,12 +13,20 @@ import {
   Shield,
   Users,
   Calendar,
+  Layers,
+  Archive,
+  CheckCircle2,
 } from 'lucide-react';
 import { AuthGuard } from '@/components/auth/auth-guard';
 import { StatusBadge, PriorityBadge } from '@/components/ui/badge';
 import { MOCK_ROOMS } from '@/lib/mock-data';
 import { formatDate, cn } from '@/lib/utils';
-import { useAuthStore, canAccessAdminCommandCenter, canAccessCemgMonitoring } from '@/stores/auth-store';
+import { isApiConfigured } from '@/lib/api-config';
+import {
+  getAdminAudienceOverviewStats,
+  getAdminOperationalAudiences,
+} from '@/lib/audience-utils';
+import { useAuthStore, canAccessAdminCommandCenter, canAccessCabinetMonitoring, canAccessCemgMonitoring, getDefaultAppRoute } from '@/stores/auth-store';
 import { useAudiencesStore } from '@/stores/audiences-store';
 import { useRouter } from 'next/navigation';
 
@@ -29,10 +38,27 @@ const roomStatusColors = {
 };
 
 export default function CommandCenterPage() {
-  const { user, permissions } = useAuthStore();
+  const { user, permissions, accessToken } = useAuthStore();
   const router = useRouter();
+  const syncFromApi = useAudiencesStore((s) => s.syncFromApi);
   const [time, setTime] = useState(new Date());
   const [pulse, setPulse] = useState(0);
+
+  useEffect(() => {
+    if (!accessToken || !isApiConfigured()) return;
+
+    let cancelled = false;
+    const run = async (attempt = 0) => {
+      const ok = await syncFromApi(accessToken, { silent: attempt > 0 });
+      if (cancelled || ok || attempt >= 3) return;
+      window.setTimeout(() => void run(attempt + 1), 1500);
+    };
+
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [accessToken, syncFromApi]);
 
   useEffect(() => {
     if (!user) return;
@@ -42,8 +68,13 @@ export default function CommandCenterPage() {
       return;
     }
 
+    if (canAccessCabinetMonitoring(user.role, permissions)) {
+      router.replace('/cabinet-monitoring');
+      return;
+    }
+
     if (!canAccessAdminCommandCenter(user.role, permissions)) {
-      router.replace('/dashboard');
+      router.replace(getDefaultAppRoute(user.role, permissions));
     }
   }, [user, permissions, router]);
 
@@ -54,10 +85,25 @@ export default function CommandCenterPage() {
   }, []);
 
   const audiences = useAudiencesStore((s) => s.audiences);
-  const critical = audiences.filter((a) => a.priority === 'CRITIQUE');
-  const pending = audiences.filter((a) => ['EN_ATTENTE', 'EN_ANALYSE'].includes(a.status));
+  const overview = getAdminAudienceOverviewStats(audiences);
+  const operational = getAdminOperationalAudiences(audiences);
+  const critical = operational.filter((a) => a.priority === 'CRITIQUE' || a.priority === 'PRIORITE_0');
+  const pending = audiences.filter((a) =>
+    ['EN_ATTENTE', 'DEJA_ENVOYE', 'EN_ANALYSE', 'TRANSMIS_DIRCAB'].includes(a.status),
+  );
   const scheduled = audiences.filter((a) => a.scheduledAt);
-  const activeTotal = audiences.filter((a) => !['TERMINEE', 'REJETEE'].includes(a.status)).length;
+  const recentAudiences = [...audiences].sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+  );
+
+  const kpis = [
+    { label: 'Total', value: overview.total, icon: Layers, glow: true },
+    { label: 'En cours', value: overview.active, icon: Activity },
+    { label: 'En attente', value: overview.pending, icon: Clock },
+    { label: 'Validées', value: overview.validated, icon: CheckCircle2 },
+    { label: 'Terminées', value: overview.completed, icon: Archive },
+    { label: 'Critiques / P0', value: overview.critical + overview.priority0, icon: AlertTriangle, critical: overview.critical + overview.priority0 > 0 },
+  ];
 
   if (!canAccessAdminCommandCenter(user?.role, permissions)) return null;
 
@@ -92,7 +138,9 @@ export default function CommandCenterPage() {
                     Transmission Live Active
                   </p>
                   <span className="text-[10px] text-military-800 font-mono">//</span>
-                  <p className="text-[10px] text-military-600 font-mono uppercase tracking-widest">Alpha-Secure-Link</p>
+                <p className="text-[10px] text-military-600 font-mono uppercase tracking-widest">
+                  Vue globale — {overview.total} audiences // {overview.active} actives
+                </p>
                 </div>
               </div>
             </div>
@@ -110,14 +158,7 @@ export default function CommandCenterPage() {
 
           {/* Critical KPI strip */}
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-            {[
-              { label: 'Total Actif', value: activeTotal, icon: Activity, glow: true },
-              { label: 'En Attente', value: pending.filter((a) => a.status === 'EN_ATTENTE').length, icon: Clock },
-              { label: 'En Analyse', value: pending.filter((a) => a.status === 'EN_ANALYSE').length, icon: Shield },
-              { label: 'Critiques', value: critical.length, icon: AlertTriangle, critical: true },
-              { label: 'Planifiées', value: audiences.filter((a) => a.status === 'PLANIFIEE').length, icon: Zap },
-              { label: 'Salles Libres', value: MOCK_ROOMS.filter((r) => r.status === 'LIBRE').length, icon: DoorOpen },
-            ].map((kpi, i) => (
+            {kpis.map((kpi, i) => (
               <motion.div
                 key={kpi.label}
                 initial={{ opacity: 0, y: 20 }}
@@ -212,13 +253,13 @@ export default function CommandCenterPage() {
                 Feed Opérationnel
               </h2>
               <div className="space-y-3 flex-1 overflow-y-auto pr-2 custom-scrollbar">
-                {(audiences.length
-                  ? audiences.slice(0, 10).map((a, i) => ({
-                      msg: `Demande enregistrée — ${a.reference}`,
+                {(recentAudiences.length
+                  ? recentAudiences.slice(0, 12).map((a) => ({
+                      msg: `${a.reference} — ${a.requesterName} (${a.status})`,
                       time: new Date(a.createdAt).toLocaleTimeString('fr-FR'),
-                      type: a.priority === 'CRITIQUE' ? 'warn' : 'info',
+                      type: a.priority === 'CRITIQUE' || a.priority === 'PRIORITE_0' ? 'warn' : 'info',
                       id: a.id,
-                      ref: a.reference
+                      ref: a.reference,
                     }))
                   : [{ msg: 'Aucune activité audience', time: time.toLocaleTimeString('fr-FR'), type: 'info', id: 'none', ref: '---' }]
                 ).map((ev, i) => (
@@ -293,13 +334,27 @@ export default function CommandCenterPage() {
           <div className="glass-strong rounded-3xl p-8 border border-military-800/30 tactical-corners">
             <div className="flex items-center justify-between mb-8">
               <h2 className="text-lg font-black uppercase tracking-[0.2em] text-military-400 font-display">
-                Validations en Cours
+                Audiences en cours de traitement
               </h2>
-              <span className="text-[10px] font-mono text-military-600 uppercase tracking-widest">{pending.length} DOSSIERS EN ATTENTE</span>
+              <div className="flex items-center gap-4">
+                <span className="text-[10px] font-mono text-military-600 uppercase tracking-widest">
+                  {pending.length} audience(s) — tous circuits
+                </span>
+                <Link
+                  href="/audiences"
+                  className="text-[10px] font-mono text-military-400 hover:text-military-300 uppercase tracking-widest"
+                >
+                  Voir toutes →
+                </Link>
+              </div>
             </div>
             <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
               {pending.length ? pending.map((aud) => (
-                <div key={aud.id} className="flex flex-col gap-4 p-5 rounded-2xl bg-carbon-900/50 border border-military-800/30 hover:border-military-500/30 transition-all group relative overflow-hidden">
+                <Link
+                  key={aud.id}
+                  href={`/audiences/${aud.id}`}
+                  className="flex flex-col gap-4 p-5 rounded-2xl bg-carbon-900/50 border border-military-800/30 hover:border-military-500/30 transition-all group relative overflow-hidden"
+                >
                   <div className="absolute top-0 right-0 p-3">
                     <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse shadow-[0_0_8px_rgba(245,158,11,0.5)]" />
                   </div>
@@ -313,10 +368,10 @@ export default function CommandCenterPage() {
                       <Zap className="w-4 h-4 text-military-500 group-hover:text-gold-400" />
                     </div>
                   </div>
-                </div>
+                </Link>
               )) : (
                 <div className="col-span-full py-12 text-center border-2 border-dashed border-military-900/30 rounded-3xl">
-                  <p className="font-mono text-xs text-military-800 uppercase tracking-[0.3em]">Aucun dossier en attente de validation</p>
+                  <p className="font-mono text-xs text-military-800 uppercase tracking-[0.3em]">Aucune audience en attente de validation</p>
                 </div>
               )}
             </div>

@@ -29,11 +29,20 @@ function nextReference(audiences: Audience[]): string {
 /** Conserve l'historique détaillé quand la liste API ne le renvoie pas. */
 function mergeAudienceDetail(previous: Audience | undefined, incoming: Audience): Audience {
   if (!previous) return incoming;
+  const visitTarget =
+    incoming.visitTarget && previous.visitTarget
+      ? {
+          ...previous.visitTarget,
+          ...incoming.visitTarget,
+          cabinet: incoming.visitTarget.cabinet ?? previous.visitTarget.cabinet,
+          bureau: incoming.visitTarget.bureau ?? previous.visitTarget.bureau,
+        }
+      : incoming.visitTarget ?? previous.visitTarget;
   return {
     ...incoming,
     statusHistory: incoming.statusHistory?.length ? incoming.statusHistory : previous.statusHistory,
     validations: incoming.validations?.length ? incoming.validations : previous.validations,
-    visitTarget: incoming.visitTarget ?? previous.visitTarget,
+    visitTarget,
     createdBy: incoming.createdBy ?? previous.createdBy,
   };
 }

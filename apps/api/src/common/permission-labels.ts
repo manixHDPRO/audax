@@ -3,6 +3,9 @@ export const PERMISSION_LABELS: Record<string, string> = {
   MENU_PROTOCOL: 'Menu — Suivi Protocol',
   MENU_COMMAND_CENTER: 'Menu — Command Center',
   MENU_CEMG_PILOTAGE: 'Menu — Pilotage CEMG',
+  MENU_CABINET_PILOTAGE: 'Menu — Pilotage Cabinet',
+  MENU_SECRETARIAT: 'Menu — Espace Secrétariat',
+  MENU_CONSULTATION: 'Menu — Consultation',
   MENU_AUDIENCES: 'Menu — Audiences',
   MENU_NEW_AUDIENCE: 'Menu — Nouvelle audience',
   MENU_CALENDAR: 'Menu — Agenda',
@@ -32,6 +35,9 @@ export const MENU_PERMISSION_KEYS = [
   'MENU_PROTOCOL',
   'MENU_COMMAND_CENTER',
   'MENU_CEMG_PILOTAGE',
+  'MENU_CABINET_PILOTAGE',
+  'MENU_SECRETARIAT',
+  'MENU_CONSULTATION',
   'MENU_AUDIENCES',
   'MENU_NEW_AUDIENCE',
   'MENU_CALENDAR',
@@ -59,11 +65,11 @@ export const PERMISSION_GROUPS: { id: string; label: string; keys: string[] }[] 
 
 export const ROLE_DESCRIPTIONS: Record<string, string> = {
   ADMIN: 'Accès complet à la plateforme et à l\'administration.',
-  CHEF: 'Pilotage stratégique, validation et command center.',
+  CHEF: 'Pilotage Cabinet, validation et traitement des audiences déléguées.',
   SECRETAIRE: 'Planification et suivi des audiences.',
   PROTOCOL: 'Validation des demandes d\'audience et confirmation de réception.',
   CEMG: 'Responsable des forces armées — pilotage stratégique et validation.',
   SALLE_ATTENTE: 'Enregistrement des demandes d\'audience et des visiteurs à l\'accueil.',
   OBSERVATEUR: 'Consultation des rapports en lecture seule.',
-  ASSISTANT: 'Soutien administratif et suivi des dossiers.',
+  ASSISTANT: 'Soutien administratif et suivi des audiences.',
 };

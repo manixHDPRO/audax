@@ -4,6 +4,7 @@ export type AudienceStatus =
   | 'EN_ATTENTE'
   | 'EN_ANALYSE'
   | 'DEJA_ENVOYE'
+  | 'TRANSMIS_DIRCAB'
   | 'VALIDEE'
   | 'REJETEE'
   | 'PLANIFIEE'
@@ -97,7 +98,16 @@ export interface Audience {
   visitors?: { visitor: Visitor }[];
   room?: Room;
   createdBy?: { firstName: string; lastName: string };
-  visitTarget?: { id: string; firstName: string; lastName: string; role?: UserRole };
+  visitTarget?: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    role?: UserRole;
+    cabinetId?: string | null;
+    bureauId?: string | null;
+    cabinet?: { id: string; name: string } | null;
+    bureau?: { id: string; name: string } | null;
+  };
   statusHistory?: AudienceStatusHistoryEntry[];
   validations?: AudienceValidationEntry[];
 }
@@ -151,7 +161,8 @@ export const VALIDATION_DECISION_LABELS: Record<ValidationDecision, string> = {
 export const STATUS_LABELS: Record<AudienceStatus, string> = {
   EN_ATTENTE: 'En attente',
   EN_ANALYSE: 'En analyse',
-  DEJA_ENVOYE: 'Déjà envoyé',
+  DEJA_ENVOYE: 'Transmise au Cabinet',
+  TRANSMIS_DIRCAB: 'Transmise par le CEMG',
   VALIDEE: 'Validée',
   REJETEE: 'Rejetée',
   PLANIFIEE: 'Planifiée',

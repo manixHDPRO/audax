@@ -201,9 +201,27 @@ export function canAccessCemgMonitoring(role?: string, permissions?: string[]) {
   return canAccessMenu('MENU_CEMG_PILOTAGE', role, permissions);
 }
 
+/** Vue de pilotage Cabinet — réservée au Chef de Cabinet. */
+export function canAccessCabinetMonitoring(role?: string, permissions?: string[]) {
+  return canAccessMenu('MENU_CABINET_PILOTAGE', role, permissions);
+}
+
+/** Espace secrétariat — planification et suivi opérationnel. */
+export function canAccessSecretariat(role?: string, permissions?: string[]) {
+  return canAccessMenu('MENU_SECRETARIAT', role, permissions);
+}
+
+/** Vue consultation — lecture seule pour Observateur. */
+export function canAccessConsultation(role?: string, permissions?: string[]) {
+  return canAccessMenu('MENU_CONSULTATION', role, permissions);
+}
+
 export function getMonitoringRoute(role?: string, permissions?: string[]) {
   if (canAccessCemgMonitoring(role, permissions)) return '/cemg-monitoring';
+  if (canAccessCabinetMonitoring(role, permissions)) return '/cabinet-monitoring';
   if (canAccessAdminCommandCenter(role, permissions)) return '/command-center';
+  if (canAccessSecretariat(role, permissions)) return '/secretariat';
+  if (canAccessConsultation(role, permissions)) return '/consultation';
   return null;
 }
 
@@ -240,7 +258,7 @@ export function canAccompanyAudience(role?: string, permissions?: string[]) {
 }
 
 export function canCompleteAudience(role?: string, permissions?: string[]) {
-  return checkPermission('COMPLETE_AUDIENCE', permissions, role, ['ADMIN', 'PROTOCOL']);
+  return checkPermission('COMPLETE_AUDIENCE', permissions, role, ['ADMIN', 'PROTOCOL', 'SALLE_ATTENTE']);
 }
 
 export function canViewAudiences(role?: string, permissions?: string[]) {
@@ -275,7 +293,10 @@ export function receivesLiveAudienceUpdates(role?: string) {
 export function getDefaultAppRoute(role?: string, permissions?: string[]) {
   if (isWaitingRoomRole(role)) return '/audiences';
   if (canAccessCemgMonitoring(role, permissions)) return '/cemg-monitoring';
+  if (canAccessCabinetMonitoring(role, permissions)) return '/cabinet-monitoring';
   if (canAccessAdminCommandCenter(role, permissions)) return '/command-center';
+  if (canAccessSecretariat(role, permissions)) return '/secretariat';
+  if (canAccessConsultation(role, permissions)) return '/consultation';
   if (canAccessMenu('MENU_PROTOCOL', role, permissions)) return '/protocol';
   if (canAccessMenu('MENU_DASHBOARD', role, permissions)) return '/dashboard';
   if (canAccessMenu('MENU_AUDIENCES', role, permissions)) return '/audiences';

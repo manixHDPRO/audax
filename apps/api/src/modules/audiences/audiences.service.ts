@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { AudienceStatus, UserRole, ValidationDecision } from '@prisma/client';
+import { AudienceStatus, Priority, Prisma, UserRole, ValidationDecision } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateAudienceDto, UpdateAudienceDto, ValidateAudienceDto } from './dto/audience.dto';
 import { getAudienceDatePrefix, nextAudienceReference } from '../../common/audience-reference';
@@ -8,10 +8,42 @@ import {
   canViewPriorite0Audiences,
 } from '../../common/priorite0-access';
 import { audienceListWhereForRole, accompanimentPendingWhereForRole, UserContext } from '../../common/audience-role-access';
+import { resolveChefDeCabinetUser } from '../../common/audience-delegation';
+import {
+  isCemgRelatedAudience,
+  isProtocolCemgConfirmQueue,
+  isSalleReceptionAudience,
+  wasValidatedByChefForAccompaniment,
+} from '../../common/audience-cemg-access';
 import {
   notifyAudienceCreated,
   notifyAudienceForwardedToDircab,
+  notifyAudienceReadyForAccompaniment,
 } from '../../common/audience-notifications';
+
+const visitTargetListSelect = {
+  id: true,
+  firstName: true,
+  lastName: true,
+  role: true,
+  cabinetId: true,
+  bureauId: true,
+  cabinet: { select: { id: true, name: true } },
+  bureau: { select: { id: true, name: true } },
+} as const;
+
+function adminOrgUnitFilter(
+  user: UserContext,
+  cabinetId?: string,
+  bureauId?: string,
+): Prisma.AudienceWhereInput {
+  if (user.role !== UserRole.ADMIN) return {};
+  const visitTarget: Prisma.UserWhereInput = {};
+  if (cabinetId) visitTarget.cabinetId = cabinetId;
+  if (bureauId) visitTarget.bureauId = bureauId;
+  if (Object.keys(visitTarget).length === 0) return {};
+  return { visitTarget };
+}
 
 @Injectable()
 export class AudiencesService {
@@ -110,6 +142,7 @@ export class AudiencesService {
     AudienceStatus.VALIDEE,
     AudienceStatus.PLANIFIEE,
     AudienceStatus.DEJA_ENVOYE,
+    AudienceStatus.TRANSMIS_DIRCAB,
   ];
 
   async searchRequestersFromAudiences(search: string) {
@@ -193,6 +226,8 @@ export class AudiencesService {
     status?: string;
     priority?: string;
     search?: string;
+    cabinetId?: string;
+    bureauId?: string;
     user: { id: string; role: UserRole; cabinetId?: string | null; bureauId?: string | null };
   }) {
     if (filters.priority === 'PRIORITE_0' && !canViewPriorite0Audiences(filters.user.role)) {
@@ -202,6 +237,7 @@ export class AudiencesService {
     return this.prisma.audience.findMany({
       where: {
         ...audienceListWhereForRole(filters.user),
+        ...adminOrgUnitFilter(filters.user, filters.cabinetId, filters.bureauId),
         ...(filters.status && { status: filters.status as AudienceStatus }),
         ...(filters.priority && { priority: filters.priority as never }),
         ...(filters.search && {
@@ -216,8 +252,20 @@ export class AudiencesService {
         visitors: { include: { visitor: true } },
         room: true,
         createdBy: { select: { firstName: true, lastName: true } },
-        visitTarget: { select: { id: true, firstName: true, lastName: true, role: true } },
-        validations: { include: { validator: { select: { firstName: true, lastName: true } } } },
+        visitTarget: { select: visitTargetListSelect },
+        validations: { include: { validator: { select: { firstName: true, lastName: true, role: true } } } },
+        statusHistory: {
+          orderBy: { createdAt: 'desc' },
+          take: 5,
+          select: {
+            id: true,
+            fromStatus: true,
+            toStatus: true,
+            comment: true,
+            changedBy: true,
+            createdAt: true,
+          },
+        },
       },
       orderBy: [{ priority: 'desc' }, { createdAt: 'desc' }],
     });
@@ -375,9 +423,39 @@ export class AudiencesService {
       throw new BadRequestException('Cette audience ne peut pas être envoyée au Dircab dans son état actuel');
     }
 
-    const newStatus = AudienceStatus.DEJA_ENVOYE;
-    const historyComment =
-      user.role === UserRole.CEMG ? 'Transmise au Dircab' : 'Transmise au Cabinet';
+    if (user.role === UserRole.PROTOCOL && !isCemgRelatedAudience(audience)) {
+      throw new BadRequestException(
+        'Le Protocol CEMG ne traite que les audiences dont la personne à voir est le CEMG',
+      );
+    }
+
+    const isCemgDelegation = user.role === UserRole.CEMG;
+    const newStatus = isCemgDelegation
+      ? AudienceStatus.TRANSMIS_DIRCAB
+      : AudienceStatus.DEJA_ENVOYE;
+
+    let historyComment = isCemgDelegation ? 'Transmise au Dircab' : 'Transmise au Cabinet';
+    const updateData: Prisma.AudienceUpdateInput = { status: newStatus };
+
+    if (isCemgDelegation) {
+      const chef = await resolveChefDeCabinetUser(this.prisma, {
+        cabinetId: user.cabinetId ?? audience.visitTarget?.cabinetId,
+      });
+      if (!chef) {
+        throw new BadRequestException(
+          'Chef de Cabinet introuvable — impossible de confier l\'audience',
+        );
+      }
+
+      const previousLabel = audience.visitTarget
+        ? `${audience.visitTarget.firstName} ${audience.visitTarget.lastName}`
+        : 'CEMG';
+
+      updateData.visitTarget = { connect: { id: chef.id } };
+      historyComment =
+        `Transmise au Dircab — audience confiée au Chef de Cabinet ` +
+        `(${chef.firstName} ${chef.lastName}), initialement ${previousLabel}`;
+    }
 
     await this.prisma.validation.create({
       data: {
@@ -385,14 +463,17 @@ export class AudiencesService {
         validatorId: user.id,
         level: 1,
         decision: ValidationDecision.EN_ATTENTE,
-        comment: historyComment,
+        comment: isCemgDelegation ? 'Transmise au Dircab' : 'Transmise au Cabinet',
         decidedAt: new Date(),
       },
     });
 
     const updated = await this.prisma.audience.update({
       where: { id },
-      data: { status: newStatus },
+      data: updateData,
+      include: {
+        visitTarget: { select: { id: true, firstName: true, lastName: true, role: true } },
+      },
     });
 
     await this.prisma.audienceStatusHistory.create({
@@ -405,7 +486,7 @@ export class AudiencesService {
       },
     });
 
-    await notifyAudienceForwardedToDircab(this.prisma, updated);
+    await notifyAudienceForwardedToDircab(this.prisma, updated, isCemgDelegation);
 
     return updated;
   }
@@ -414,9 +495,11 @@ export class AudiencesService {
     const audience = await this.findOne(id, user);
 
     // Si l'audience est déjà envoyée au Dircab, seuls le CEMG, le Dircab (CHEF) et l'Admin peuvent décider
-    if (audience.status === AudienceStatus.DEJA_ENVOYE && 
-        user.role !== UserRole.CEMG && 
-        user.role !== UserRole.CHEF && 
+    if (
+      (audience.status === AudienceStatus.DEJA_ENVOYE ||
+        audience.status === AudienceStatus.TRANSMIS_DIRCAB) &&
+        user.role !== UserRole.CEMG &&
+        user.role !== UserRole.CHEF &&
         user.role !== UserRole.ADMIN) {
       throw new BadRequestException('Audience déjà envoyée au Dircab — accès restreint');
     }
@@ -436,12 +519,21 @@ export class AudiencesService {
       },
     });
 
+    const chefDirectAccompaniment =
+      user.role === UserRole.CHEF && dto.decision === ValidationDecision.APPROUVE;
+
     const newStatus =
       dto.decision === ValidationDecision.APPROUVE
-        ? AudienceStatus.VALIDEE
+        ? chefDirectAccompaniment
+          ? AudienceStatus.CONFIRMEE
+          : AudienceStatus.VALIDEE
         : dto.decision === ValidationDecision.REJETE
           ? AudienceStatus.REJETEE
           : AudienceStatus.EN_ANALYSE;
+
+    const historyComment = chefDirectAccompaniment
+      ? 'Audience validée par le Chef de Cabinet — prête pour accompagnement'
+      : dto.comment;
 
     await this.prisma.audience.update({
       where: { id },
@@ -454,9 +546,13 @@ export class AudiencesService {
         fromStatus: audience.status,
         toStatus: newStatus,
         changedBy: user.id,
-        comment: dto.comment,
+        comment: historyComment,
       },
     });
+
+    if (chefDirectAccompaniment) {
+      await notifyAudienceReadyForAccompaniment(this.prisma, audience);
+    }
 
     return validation;
   }
@@ -480,8 +576,13 @@ export class AudiencesService {
     const transmitted = await this.prisma.audienceStatusHistory.findFirst({
       where: {
         audienceId: id,
-        toStatus: AudienceStatus.DEJA_ENVOYE,
-        comment: { in: ['Transmise au Cabinet', 'Transmise au Dircab'] },
+        OR: [
+          {
+            toStatus: AudienceStatus.DEJA_ENVOYE,
+            comment: { in: ['Transmise au Cabinet', 'Transmise au Dircab'] },
+          },
+          { toStatus: AudienceStatus.TRANSMIS_DIRCAB },
+        ],
       },
     });
     if (!transmitted) {
@@ -492,13 +593,14 @@ export class AudiencesService {
 
     if (
       audience.status !== AudienceStatus.DEJA_ENVOYE &&
+      audience.status !== AudienceStatus.TRANSMIS_DIRCAB &&
       audience.status !== AudienceStatus.EN_ANALYSE
     ) {
       throw new BadRequestException('Cette audience ne peut pas être clôturée dans son état actuel');
     }
 
     const comment =
-      dto?.comment?.trim() || 'Audience clôturée par le Cabinet — dossier terminé';
+      dto?.comment?.trim() || 'Audience clôturée par le Cabinet — traitement terminé';
 
     const updated = await this.prisma.audience.update({
       where: { id },
@@ -521,7 +623,10 @@ export class AudiencesService {
   async confirmAudience(id: string, userId: string, role: UserRole) {
     const audience = await this.prisma.audience.findUnique({
       where: { id },
-      include: { visitTarget: { select: { cabinetId: true, bureauId: true } } },
+      include: {
+        visitTarget: { select: { cabinetId: true, bureauId: true, role: true } },
+        statusHistory: { orderBy: { createdAt: 'desc' }, take: 15 },
+      },
     });
     if (!audience) throw new NotFoundException('Audience introuvable');
 
@@ -530,8 +635,10 @@ export class AudiencesService {
       throw new BadRequestException('Seul le Protocol peut confirmer cette audience');
     }
 
-    if (audience.status !== AudienceStatus.VALIDEE && audience.status !== AudienceStatus.PLANIFIEE) {
-      throw new BadRequestException('Seules les audiences validées ou planifiées peuvent être confirmées');
+    if (!isProtocolCemgConfirmQueue(audience)) {
+      throw new BadRequestException(
+        'Seules les audiences validées par le CEMG relèvent du suivi Protocol',
+      );
     }
 
     const updated = await this.prisma.audience.update({
@@ -626,7 +733,7 @@ export class AudiencesService {
 
     if (audience.status !== AudienceStatus.CONFIRMEE) {
       throw new BadRequestException(
-        'Seules les audiences confirmées par le Protocol peuvent être accompagnées',
+        'Seules les audiences confirmées peuvent être accompagnées',
       );
     }
 
@@ -666,12 +773,29 @@ export class AudiencesService {
   }
 
   async findReceptionsPending(user: UserContext) {
-    const scope = audienceListWhereForRole(user);
-    return this.prisma.audience.findMany({
-      where: {
-        ...scope,
-        status: { in: [AudienceStatus.CONFIRMEE] },
-      },
+    const scope =
+      user.role === UserRole.SALLE_ATTENTE
+        ? accompanimentPendingWhereForRole(user)
+        : audienceListWhereForRole(user);
+
+    const where: Prisma.AudienceWhereInput = {
+      ...scope,
+      status: { in: [AudienceStatus.CONFIRMEE] },
+    };
+
+    if (user.role === UserRole.SALLE_ATTENTE) {
+      where.statusHistory = {
+        some: { comment: { startsWith: 'Accompagné au bureau' } },
+      };
+    } else if (user.role === UserRole.PROTOCOL || user.role === UserRole.ADMIN) {
+      where.visitTarget = { role: UserRole.CEMG };
+      where.statusHistory = {
+        some: { comment: { startsWith: 'Accompagné au bureau' } },
+      };
+    }
+
+    const rows = await this.prisma.audience.findMany({
+      where,
       select: {
         id: true,
         reference: true,
@@ -681,10 +805,21 @@ export class AudiencesService {
         priority: true,
         scheduledAt: true,
         createdAt: true,
-        visitTarget: { select: { firstName: true, lastName: true } },
+        visitTarget: { select: { firstName: true, lastName: true, role: true } },
+        statusHistory: {
+          orderBy: { createdAt: 'desc' },
+          take: 15,
+          select: { comment: true },
+        },
       },
       orderBy: [{ scheduledAt: 'asc' }, { createdAt: 'desc' }],
     });
+
+    if (user.role === UserRole.SALLE_ATTENTE) {
+      return rows.filter((row) => isSalleReceptionAudience(row));
+    }
+
+    return rows;
   }
 
   async completeReception(
@@ -695,13 +830,44 @@ export class AudiencesService {
   ) {
     const audience = await this.prisma.audience.findUnique({
       where: { id },
-      include: { visitTarget: { select: { firstName: true, lastName: true } } },
+      include: {
+        visitTarget: { select: { firstName: true, lastName: true, role: true } },
+        statusHistory: { orderBy: { createdAt: 'desc' }, take: 15 },
+      },
     });
     if (!audience) throw new NotFoundException('Audience introuvable');
 
-    // Seul le Protocol ou l'Admin peut confirmer la réception
-    if (role !== UserRole.PROTOCOL && role !== UserRole.ADMIN) {
-      throw new BadRequestException('Seul le Protocol peut confirmer la réception');
+    const accompanied = await this.prisma.audienceStatusHistory.findFirst({
+      where: {
+        audienceId: id,
+        comment: { startsWith: 'Accompagné au bureau' },
+      },
+    });
+    if (!accompanied) {
+      throw new BadRequestException(
+        'Accompagnez d\'abord le visiteur au bureau avant de confirmer la réception',
+      );
+    }
+
+    if (role === UserRole.SALLE_ATTENTE) {
+      if (!isSalleReceptionAudience(audience)) {
+        throw new BadRequestException(
+          'La réception des audiences CEMG (circuit Protocol) est réservée au Protocol',
+        );
+      }
+    } else if (role === UserRole.PROTOCOL || role === UserRole.ADMIN) {
+      if (!isCemgRelatedAudience(audience)) {
+        throw new BadRequestException(
+          'La réception hors circuit CEMG est réservée à la salle d\'attente',
+        );
+      }
+      if (wasValidatedByChefForAccompaniment(audience)) {
+        throw new BadRequestException(
+          'Cette audience relève de la salle d\'attente pour la confirmation de réception',
+        );
+      }
+    } else {
+      throw new BadRequestException('Accès refusé pour confirmer la réception');
     }
 
     if (audience.status !== AudienceStatus.CONFIRMEE) {
@@ -713,9 +879,11 @@ export class AudiencesService {
     const visitTargetName = audience.visitTarget
       ? `${audience.visitTarget.firstName} ${audience.visitTarget.lastName}`
       : 'la personne à voir';
-    const comment =
-      dto?.comment?.trim() ||
-      `Visiteur reçu — rencontre confirmée avec ${visitTargetName}`;
+    const defaultComment =
+      role === UserRole.SALLE_ATTENTE
+        ? `Visiteur reçu — réception confirmée par la salle d'attente (${visitTargetName})`
+        : `Visiteur reçu — rencontre confirmée avec ${visitTargetName}`;
+    const comment = dto?.comment?.trim() || defaultComment;
 
     const updated = await this.prisma.audience.update({
       where: { id },
@@ -741,8 +909,14 @@ export class AudiencesService {
     return { success: true };
   }
 
-  async getStats(user: { id: string; role: UserRole; cabinetId?: string | null; bureauId?: string | null }) {
-    const scope = audienceListWhereForRole(user);
+  async getStats(
+    user: { id: string; role: UserRole; cabinetId?: string | null; bureauId?: string | null },
+    orgFilters?: { cabinetId?: string; bureauId?: string },
+  ) {
+    const scope: Prisma.AudienceWhereInput = {
+      ...audienceListWhereForRole(user),
+      ...adminOrgUnitFilter(user, orgFilters?.cabinetId, orgFilters?.bureauId),
+    };
     const [total, enAttente, enAnalyse, validees, rejetees, planifiees, terminees, critiques] =
       await Promise.all([
         this.prisma.audience.count({ where: scope }),

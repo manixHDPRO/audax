@@ -21,12 +21,16 @@ export class AudiencesController {
     @Query('status') status?: string,
     @Query('priority') priority?: string,
     @Query('search') search?: string,
+    @Query('cabinetId') cabinetId?: string,
+    @Query('bureauId') bureauId?: string,
     @CurrentUser() user?: JwtPayload,
   ) {
     return this.audiencesService.findAll({
       status,
       priority,
       search,
+      cabinetId,
+      bureauId,
       user: {
         id: user!.sub,
         role: user!.role as UserRole,
@@ -38,13 +42,17 @@ export class AudiencesController {
 
   @Get('stats')
   @RequirePermission('VIEW_AUDIENCES')
-  getStats(@CurrentUser() user: JwtPayload) {
+  getStats(
+    @Query('cabinetId') cabinetId?: string,
+    @Query('bureauId') bureauId?: string,
+    @CurrentUser() user?: JwtPayload,
+  ) {
     return this.audiencesService.getStats({
-      id: user.sub,
-      role: user.role as UserRole,
-      cabinetId: user.cabinetId,
-      bureauId: user.bureauId,
-    });
+      id: user!.sub,
+      role: user!.role as UserRole,
+      cabinetId: user!.cabinetId,
+      bureauId: user!.bureauId,
+    }, { cabinetId, bureauId });
   }
 
   @Get('accompaniment-pending')
