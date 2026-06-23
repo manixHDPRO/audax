@@ -1,40 +1,54 @@
 #!/bin/sh
-# Réinitialisation complète de la stack Audax sur le VPS (Supabase)
+# Réinitialisation complète du VPS Audax — PM2 + dossier projet
 set -e
 
-cd "$(dirname "$0")/.."
-COMPOSE="docker-compose -f docker-compose.prod.yml"
+VPS_HOST="${VPS_HOST:-187.77.72.4}"
+PROJECT_DIRS="/root/Audax /root/audax /opt/Audax /opt/audax /home/*/Audax /home/*/audax"
 
-echo "==> Arrêt et suppression de l'ancienne stack (Postgres local inclus)"
-docker-compose down -v 2>/dev/null || true
-$COMPOSE down -v 2>/dev/null || true
-docker rm -f audax-postgres audax-redis audax-api audax-web 2>/dev/null || true
-docker volume rm audax_pg_data audax_redis_data 2>/dev/null || true
-
-echo "==> Nettoyage des images inutilisées"
-docker image prune -f
-
-echo "==> Mise à jour du code"
-git pull
-
-if [ ! -f .env ]; then
-  echo "ERREUR: .env manquant. Copiez .env.example et configurez Supabase + JWT."
+echo "================================================"
+echo "  RESET VPS AUDAX — suppression totale"
+echo "  Hôte: $(hostname) ($VPS_HOST)"
+echo "================================================"
+echo ""
+echo "Cette opération va :"
+echo "  - Arrêter les processus PM2 (audax-api, audax-web)"
+echo "  - Supprimer les dossiers du projet Audax"
+echo ""
+printf "Tapez 'OUI' pour confirmer : "
+read -r CONFIRM
+if [ "$CONFIRM" != "OUI" ]; then
+  echo "Annulé."
   exit 1
 fi
 
-echo "==> Build et démarrage (API + Web → Supabase)"
-$COMPOSE up -d --build
+echo ""
+echo "==> Arrêt PM2"
+if command -v pm2 >/dev/null 2>&1; then
+  pm2 delete audax-api audax-web 2>/dev/null || true
+  pm2 save 2>/dev/null || true
+else
+  echo "    PM2 non installé — ignoré."
+fi
 
-echo "==> Attente du démarrage (30s)"
-sleep 30
-
-echo "==> État des conteneurs"
-$COMPOSE ps
-
-echo "==> Test API"
-curl -sf http://127.0.0.1:4000/api/health && echo "" || echo "API pas encore prête — voir: $COMPOSE logs --tail=80 api"
+echo "==> Suppression des dossiers projet"
+for pattern in $PROJECT_DIRS; do
+  for dir in $pattern; do
+    if [ -d "$dir" ]; then
+      echo "    Suppression : $dir"
+      rm -rf "$dir"
+    fi
+  done
+done
 
 echo ""
-echo "Réinitialisation terminée."
-echo "Frontend: http://$(curl -sf ifconfig.me 2>/dev/null || echo 'VOTRE_IP'):3000"
-echo "Les migrations et le seed Supabase se font depuis votre machine locale."
+echo "==> État PM2"
+if command -v pm2 >/dev/null 2>&1; then
+  pm2 status
+else
+  echo "  (PM2 non disponible)"
+fi
+
+echo ""
+echo "================================================"
+echo "  RESET TERMINÉ — VPS nettoyé pour Audax"
+echo "================================================"
