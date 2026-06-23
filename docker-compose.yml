@@ -71,8 +71,7 @@ services:
     environment:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:4000/api}
     depends_on:
-      api:
-        condition: service_healthy
+      - api
 
 volumes:
   audax_pg_data:
