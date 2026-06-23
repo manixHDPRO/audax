@@ -717,3 +717,31 @@ export async function deleteCustomRoleApi(token: string, id: string) {
     token,
   });
 }
+
+export interface NotificationApiRecord {
+  id: string;
+  type: 'INFO' | 'SUCCESS' | 'WARNING' | 'CRITICAL';
+  title: string;
+  message: string;
+  isRead: boolean;
+  link?: string | null;
+  createdAt: string;
+}
+
+export async function listNotificationsApi(token: string) {
+  return apiFetch<NotificationApiRecord[]>('/notifications', { token });
+}
+
+export async function markNotificationReadApi(token: string, id: string) {
+  return apiFetch<{ count: number }>(`/notifications/${id}/read`, {
+    method: 'PATCH',
+    token,
+  });
+}
+
+export async function markAllNotificationsReadApi(token: string) {
+  return apiFetch<{ count: number }>('/notifications/read-all', {
+    method: 'PATCH',
+    token,
+  });
+}

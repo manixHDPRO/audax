@@ -22,7 +22,7 @@ import { useAuthStore } from '@/stores/auth-store';
 import { useAudiencesStore } from '@/stores/audiences-store';
 import { formatDate, formatDateShort, cn } from '@/lib/utils';
 import { confirmAudienceApi, completeReceptionApi, forwardToDircabApi } from '@/lib/api-client';
-import { notifyAudienceSync } from '@/lib/audience-sync-bus';
+import { notifyAudienceSync, buildForwardAlertSync, buildProtocolFollowUpAlertSync } from '@/lib/audience-sync-bus';
 import {
   isProtocolCemgCabinetTracking,
   isProtocolCemgConfirmQueue,
@@ -47,9 +47,10 @@ export default function ProtocolTrackingPage() {
   const [search, setSearch] = useState('');
   const [activeTab, setActiveTab] = useState<'forward' | 'cabinet' | 'confirm' | 'reception'>('forward');
 
-  const selectedAudience = useMemo(() => 
-    audiences.find(a => a.id === selectedAudienceId)
-  , [audiences, selectedAudienceId]);
+  const selectedAudience = useMemo(
+    () => audiences.find((a) => a.id === selectedAudienceId),
+    [audiences, selectedAudienceId],
+  );
 
   // 0. Audiences en attente de transmission au Cabinet
   const toForward = useMemo(
@@ -312,7 +313,11 @@ export default function ProtocolTrackingPage() {
     try {
       await forwardToDircabApi(accessToken, selectedAudienceId);
       patchAudienceStatus(selectedAudienceId, 'DEJA_ENVOYE');
-      notifyAudienceSync({ type: 'updated', audienceId: selectedAudienceId });
+      notifyAudienceSync({
+        type: 'updated',
+        audienceId: selectedAudienceId,
+        ...buildForwardAlertSync(false),
+      });
       await fetchAudiences(accessToken, { silent: true });
       setForwardDialogOpen(false);
       setSelectedAudienceId(null);
@@ -330,7 +335,11 @@ export default function ProtocolTrackingPage() {
     try {
       await confirmAudienceApi(accessToken, selectedAudienceId);
       patchAudienceStatus(selectedAudienceId, 'CONFIRMEE');
-      notifyAudienceSync({ type: 'confirmed', audienceId: selectedAudienceId });
+      notifyAudienceSync({
+        type: 'confirmed',
+        audienceId: selectedAudienceId,
+        ...buildProtocolFollowUpAlertSync(),
+      });
       await fetchAudiences(accessToken, { silent: true });
       setConfirmDialogOpen(false);
       setSelectedAudienceId(null);

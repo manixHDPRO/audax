@@ -384,6 +384,11 @@ export function isInCemgWaitingQueue(audience: Audience, role?: string): boolean
   return true;
 }
 
+/** Priorité 0 — jamais visible côté Chef de Cabinet. */
+export function isPriorite0HiddenFromChef(audience: Pick<Audience, 'priority'>, role?: string): boolean {
+  return role === 'CHEF' && audience.priority === 'PRIORITE_0';
+}
+
 /** Chef en attente : Protocol a transmis au Cabinet, le CEMG n'a pas encore délégué au DirCab (hors P0). */
 export function isChefAwaitingCemgDelegation(audience: Audience): boolean {
   if (audience.status !== 'DEJA_ENVOYE') return false;
@@ -395,6 +400,7 @@ export function isChefAwaitingCemgDelegation(audience: Audience): boolean {
 /** Fil d'attente Chef de Cabinet — après transmission Protocol ou délégation CEMG. */
 export function isChefCabinetQueue(audience: Audience, role?: string): boolean {
   if (role !== 'CHEF') return true;
+  if (isPriorite0HiddenFromChef(audience, role)) return false;
   if (isChefAwaitingCemgDelegation(audience)) return true;
   if (audience.status === 'TRANSMIS_DIRCAB') return true;
   if (audience.status === 'DEJA_ENVOYE' && !isCemgRelatedAudience(audience)) return true;
@@ -406,6 +412,7 @@ export function isChefCabinetQueue(audience: Audience, role?: string): boolean {
 /** Dossiers visibles dans le pilotage Cabinet (actifs + historique récent). */
 export function isChefPilotageAudience(audience: Audience, role?: string): boolean {
   if (role !== 'CHEF') return true;
+  if (isPriorite0HiddenFromChef(audience, role)) return false;
   if (isChefCabinetQueue(audience, role)) return true;
   return ['VALIDEE', 'PLANIFIEE', 'CONFIRMEE', 'TERMINEE', 'REJETEE'].includes(audience.status);
 }

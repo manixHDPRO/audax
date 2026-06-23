@@ -1,19 +1,35 @@
-import { Controller, Get, Patch, Param, UseGuards } from '@nestjs/common';
+import { Controller, Get, Patch, Param, Sse, UseGuards, MessageEvent } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
+import { UserRole } from '@prisma/client';
+import { Observable } from 'rxjs';
 import { NotificationsService } from './notifications.service';
-import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { NotificationStreamService } from './notification-stream.service';
+import { CurrentUser, JwtPayload } from '../../common/decorators/current-user.decorator';
 
 @ApiTags('notifications')
 @ApiBearerAuth()
 @UseGuards(AuthGuard('jwt'))
 @Controller('notifications')
 export class NotificationsController {
-  constructor(private notificationsService: NotificationsService) {}
+  constructor(
+    private notificationsService: NotificationsService,
+    private notificationStream: NotificationStreamService,
+  ) {}
 
   @Get()
-  findAll(@CurrentUser('sub') userId: string) {
-    return this.notificationsService.findAll(userId);
+  findAll(@CurrentUser() user: JwtPayload) {
+    return this.notificationsService.findAll({
+      id: user.sub,
+      role: user.role as UserRole,
+      cabinetId: user.cabinetId,
+      bureauId: user.bureauId,
+    });
+  }
+
+  @Sse('stream')
+  stream(@CurrentUser('sub') userId: string): Observable<MessageEvent> {
+    return this.notificationStream.streamFor(userId);
   }
 
   @Patch(':id/read')

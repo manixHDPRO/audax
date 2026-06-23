@@ -19,7 +19,15 @@ import {
   notifyAudienceCreated,
   notifyAudienceForwardedToDircab,
   notifyAudienceReadyForAccompaniment,
+  notifyCemgOnProtocolCabinetForward,
+  notifyProtocolOnCemgValidation,
+  notifySalleOnProtocolFollowUp,
+  notifySalleOnProtocolCemgAction,
 } from '../../common/audience-notifications';
+import {
+  NotificationStreamService,
+  NotificationSoundType,
+} from '../notifications/notification-stream.service';
 
 const visitTargetListSelect = {
   id: true,
@@ -47,7 +55,23 @@ function adminOrgUnitFilter(
 
 @Injectable()
 export class AudiencesService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private notificationStream: NotificationStreamService,
+  ) {}
+
+  private pushLiveAlerts(
+    recipientIds: string[],
+    payload: {
+      type: NotificationSoundType;
+      title: string;
+      message?: string;
+      audienceId?: string;
+    },
+  ) {
+    if (!recipientIds.length) return;
+    this.notificationStream.pushMany(recipientIds, payload);
+  }
 
   private getTodayBounds() {
     const now = new Date();
@@ -358,7 +382,28 @@ export class AudiencesService {
       include: { visitors: { include: { visitor: true } } },
     });
 
-    await notifyAudienceCreated(this.prisma, audienceWithVisitors ?? audience);
+    const { recipientIds, criticalRecipientIds } = await notifyAudienceCreated(this.prisma, {
+      id: audience.id,
+      reference,
+      subject: dto.subject,
+      requesterName: dto.requesterName,
+      visitTargetUserId: dto.visitTargetUserId,
+      priority: dto.priority,
+    });
+
+    const infoRecipientIds = recipientIds.filter((id) => !criticalRecipientIds.includes(id));
+    this.pushLiveAlerts(infoRecipientIds, {
+      type: 'INFO',
+      title: 'Nouvelle demande d\'audience',
+      message: `${reference} — ${dto.subject}`,
+      audienceId: audience.id,
+    });
+    this.pushLiveAlerts(criticalRecipientIds, {
+      type: 'CRITICAL',
+      title: 'Audience Priorité 0',
+      message: `${reference} — ${dto.subject}`,
+      audienceId: audience.id,
+    });
 
     return audienceWithVisitors ?? audience;
   }
@@ -486,7 +531,44 @@ export class AudiencesService {
       },
     });
 
-    await notifyAudienceForwardedToDircab(this.prisma, updated, isCemgDelegation);
+    if (isCemgDelegation) {
+      const chefRecipients = await notifyAudienceForwardedToDircab(this.prisma, updated, true);
+      this.pushLiveAlerts(chefRecipients, {
+        type: 'WARNING',
+        title: 'Audience transmise par le CEMG',
+        message: `${updated.reference} — ${updated.subject}`,
+        audienceId: id,
+      });
+    } else {
+      const cemgRecipients = await notifyCemgOnProtocolCabinetForward(this.prisma, {
+        id: updated.id,
+        reference: updated.reference,
+        subject: updated.subject,
+        requesterName: audience.requesterName,
+        visitTargetUserId: audience.visitTargetUserId,
+      });
+      this.pushLiveAlerts(cemgRecipients, {
+        type: 'WARNING',
+        title: 'Audience transmise au Cabinet',
+        message: `${updated.reference} — ${updated.subject}`,
+        audienceId: id,
+      });
+    }
+
+    if (user.role === UserRole.PROTOCOL && isCemgRelatedAudience(audience)) {
+      const salleRecipients = await notifySalleOnProtocolCemgAction(this.prisma, {
+        id: updated.id,
+        reference: updated.reference,
+        subject: updated.subject,
+        requesterName: audience.requesterName,
+        visitTargetUserId: audience.visitTargetUserId,
+      });
+      this.pushLiveAlerts(salleRecipients, {
+        type: 'INFO',
+        title: 'Protocol — audience CEMG traitée',
+        audienceId: id,
+      });
+    }
 
     return updated;
   }
@@ -551,7 +633,31 @@ export class AudiencesService {
     });
 
     if (chefDirectAccompaniment) {
-      await notifyAudienceReadyForAccompaniment(this.prisma, audience);
+      const salleRecipients = await notifyAudienceReadyForAccompaniment(this.prisma, audience);
+      this.pushLiveAlerts(salleRecipients, {
+        type: 'INFO',
+        title: 'Accompagnement requis',
+        audienceId: id,
+      });
+    } else if (
+      user.role === UserRole.CEMG &&
+      dto.decision === ValidationDecision.APPROUVE &&
+      newStatus === AudienceStatus.VALIDEE &&
+      isCemgRelatedAudience(audience)
+    ) {
+      const protocolRecipients = await notifyProtocolOnCemgValidation(this.prisma, {
+        id: audience.id,
+        reference: audience.reference,
+        subject: audience.subject,
+        requesterName: audience.requesterName,
+        visitTargetUserId: audience.visitTargetUserId,
+      });
+      this.pushLiveAlerts(protocolRecipients, {
+        type: 'SUCCESS',
+        title: 'CEMG — audience validée',
+        message: `${audience.reference} — ${audience.subject}`,
+        audienceId: id,
+      });
     }
 
     return validation;
@@ -654,6 +760,21 @@ export class AudiencesService {
         changedBy: userId,
         comment: 'Audience confirmée par le Protocol — Prête pour accompagnement',
       },
+    });
+
+    const salleRecipients = await notifySalleOnProtocolFollowUp(this.prisma, {
+      id: audience.id,
+      reference: audience.reference,
+      subject: audience.subject,
+      requesterName: audience.requesterName,
+      visitTargetUserId: audience.visitTargetUserId,
+      createdById: audience.createdById,
+    });
+    this.pushLiveAlerts(salleRecipients, {
+      type: 'WARNING',
+      title: 'Protocol — accompagnement requis',
+      message: `${audience.reference} — ${audience.requesterName}`,
+      audienceId: id,
     });
 
     return updated;

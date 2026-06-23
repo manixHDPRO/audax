@@ -1,6 +1,14 @@
+import type { NotificationSoundType } from '@/lib/notification-sounds';
+import type { UserRole } from '@/types';
+
 export type AudienceSyncEvent = {
-  type: 'sync' | 'updated' | 'confirmed' | 'reception-completed' | 'accompaniment-completed';
+  type: 'sync' | 'created' | 'updated' | 'confirmed' | 'reception-completed' | 'accompaniment-completed';
   audienceId?: string;
+  /** Jouer le son immédiatement pour ces rôles (même navigateur / autre onglet). */
+  alertRoles?: UserRole[];
+  soundType?: NotificationSoundType;
+  /** Son spécifique par rôle (prioritaire sur soundType). */
+  alertSoundByRole?: Partial<Record<UserRole, NotificationSoundType>>;
 };
 
 const CHANNEL = 'audax-audience-sync';
@@ -16,6 +24,94 @@ export function notifyAudienceSync(event: AudienceSyncEvent = { type: 'sync' }) 
   } catch {
     // BroadcastChannel indisponible (SSR / navigateurs restreints)
   }
+}
+
+/** Alertes sonores instantanées à la création d'une audience. */
+export function buildCreateAudienceAlertSync(
+  visitTargetRole?: UserRole,
+  priority?: string,
+): Pick<AudienceSyncEvent, 'alertRoles' | 'alertSoundByRole' | 'soundType'> {
+  const alertRoles: UserRole[] = [];
+  const alertSoundByRole: Partial<Record<UserRole, NotificationSoundType>> = {};
+
+  // Circuit CEMG : à la création, seul le Protocol est alerté (le Chef intervient plus tard).
+  if (visitTargetRole === 'CEMG') {
+    alertRoles.push('PROTOCOL');
+    alertSoundByRole.PROTOCOL = 'INFO';
+  }
+
+  if (priority === 'PRIORITE_0') {
+    alertRoles.push('CEMG');
+    alertSoundByRole.CEMG = 'CRITICAL';
+  }
+
+  if (visitTargetRole !== 'CEMG' && priority !== 'PRIORITE_0') {
+    alertRoles.push('CHEF');
+    alertSoundByRole.CHEF = 'INFO';
+  }
+
+  return {
+    alertRoles: alertRoles.length ? alertRoles : undefined,
+    alertSoundByRole: Object.keys(alertSoundByRole).length ? alertSoundByRole : undefined,
+    soundType: priority === 'PRIORITE_0' ? 'CRITICAL' : 'INFO',
+  };
+}
+
+/** Alertes sonores lors d'une transmission (Protocol → Cabinet ou CEMG → DirCab). */
+export function buildForwardAlertSync(
+  fromCemgDelegation: boolean,
+): Pick<AudienceSyncEvent, 'alertRoles' | 'alertSoundByRole' | 'soundType'> {
+  if (fromCemgDelegation) {
+    return {
+      alertRoles: ['CHEF'],
+      alertSoundByRole: { CHEF: 'WARNING' },
+      soundType: 'WARNING',
+    };
+  }
+
+  return {
+    alertRoles: ['CEMG'],
+    alertSoundByRole: { CEMG: 'WARNING' },
+    soundType: 'WARNING',
+  };
+}
+
+/** Alertes sonores après validation (CEMG → Protocol, Chef → Salle). */
+export function buildValidationAlertSync(
+  decision: 'APPROUVE' | 'REJETE',
+  validatorRole?: UserRole,
+): Pick<AudienceSyncEvent, 'alertRoles' | 'alertSoundByRole' | 'soundType'> | undefined {
+  if (decision !== 'APPROUVE' || !validatorRole) return undefined;
+
+  if (validatorRole === 'CEMG') {
+    return {
+      alertRoles: ['PROTOCOL'],
+      alertSoundByRole: { PROTOCOL: 'SUCCESS' },
+      soundType: 'SUCCESS',
+    };
+  }
+
+  if (validatorRole === 'CHEF') {
+    return {
+      alertRoles: ['SALLE_ATTENTE'],
+      alertSoundByRole: { SALLE_ATTENTE: 'INFO' },
+      soundType: 'INFO',
+    };
+  }
+
+  return undefined;
+}
+
+/** Protocol confirme le suivi — alerte la salle d'attente. */
+export function buildProtocolFollowUpAlertSync(): Pick<
+  AudienceSyncEvent,
+  'alertRoles' | 'alertSoundByRole' | 'soundType'
+> {
+  return {
+    alertRoles: ['SALLE_ATTENTE'],
+    alertSoundByRole: { SALLE_ATTENTE: 'WARNING' },
+    soundType: 'WARNING',
+  };
 }
 
 export function subscribeAudienceSync(callback: (event: AudienceSyncEvent) => void) {

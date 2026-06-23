@@ -2,6 +2,7 @@
 
 import { Card, CardHeader, CardTitle } from '@/components/ui/card';
 import { TwoFactorSetup } from '@/components/auth/two-factor-setup';
+import { NotificationSoundSettings } from '@/components/settings/notification-sound-settings';
 import { useAuthStore } from '@/stores/auth-store';
 import { ROLE_LABELS } from '@/types';
 
@@ -12,8 +13,10 @@ export function GeneralSettingsTab() {
     <div className="space-y-6">
       <TwoFactorSetup />
 
+      <NotificationSoundSettings />
+
       <Card>
-        <CardHeader><CardTitle>Préférences de notification</CardTitle></CardHeader>
+        <CardHeader><CardTitle>Autres alertes</CardTitle></CardHeader>
         <div className="space-y-4">
           {['Notifications in-app', 'Alertes email', 'Alertes SMS', 'Alertes prioritaires'].map((pref) => (
             <label key={pref} className="flex items-center justify-between p-3 rounded-xl bg-carbon-800/40 cursor-pointer">

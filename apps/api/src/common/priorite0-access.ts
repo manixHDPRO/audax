@@ -3,9 +3,7 @@ import { AudienceStatus, Priority, UserRole } from '@prisma/client';
 import { UserContext } from './audience-role-access';
 import { isDelegatedToDircab } from './audience-delegation';
 
-/** Audiences Priorité 0 : visibles par l'Administrateur, le Protocol et le CEMG. 
- * Le Chef de Cabinet ne voit les P0 que s'il en est l'auteur ou la cible (logique gérée dans audienceListWhereForRole).
- */
+/** Audiences Priorité 0 : visibles par l'Administrateur, le Protocol et le CEMG uniquement. */
 export function canViewPriorite0Audiences(role: UserRole | string): boolean {
   return (
     role === UserRole.PROTOCOL ||
@@ -60,17 +58,7 @@ export function assertCanViewAudience(audience: AudienceAccessRecord, user: User
 
   if (isCreator || isDirectTarget || sameCabinet || sameBureau) return;
 
-  if (
-    (role === UserRole.PROTOCOL || role === UserRole.CEMG || role === UserRole.CHEF) &&
-    targetsCEMG
-  ) {
-    if (
-      role === UserRole.CHEF &&
-      audience.priority === 'PRIORITE_0' &&
-      audience.status !== AudienceStatus.TRANSMIS_DIRCAB
-    ) {
-      throw new NotFoundException('Audience introuvable');
-    }
+  if ((role === UserRole.PROTOCOL || role === UserRole.CEMG) && targetsCEMG) {
     return;
   }
 

@@ -29,12 +29,15 @@ import {
   useAuthStore,
   canAccessMenu,
   isWaitingRoomRole,
+  receivesLiveAccompanimentUpdates,
   receivesLiveAudienceUpdates,
   getMonitoringRoute,
   getDefaultAppRoute,
 } from '@/stores/auth-store';
 import { useAudiencesStore } from '@/stores/audiences-store';
 import { isApiConfigured } from '@/lib/api-config';
+import { unlockNotificationAudio } from '@/lib/notification-sounds';
+import { useNotificationAlerts } from '@/hooks/use-notification-alerts';
 import { subscribeAudienceSync } from '@/lib/audience-sync-bus';
 import { ROLE_LABELS } from '@/types';
 
@@ -261,7 +264,13 @@ function SidebarRail({ items, activePath, homeHref }: { items: NavItem[]; active
 }
 
 /* ─── Top command bar ─── */
-function TopBar({ onOpenOrbital }: { onOpenOrbital: () => void }) {
+function TopBar({
+  onOpenOrbital,
+  unreadNotifications,
+}: {
+  onOpenOrbital: () => void;
+  unreadNotifications: number;
+}) {
   const { user, logout } = useAuthStore();
 
   return (
@@ -302,7 +311,11 @@ function TopBar({ onOpenOrbital }: { onOpenOrbital: () => void }) {
           className="relative w-11 h-11 rounded-2xl glass flex items-center justify-center hover:glow-green transition-all border border-military-800/50 group"
         >
           <Bell className="w-5 h-5 text-cream/40 group-hover:text-military-400 transition-colors" />
-          <span className="absolute -top-1 -right-1 w-5 h-5 rounded-lg bg-red-600 text-[10px] flex items-center justify-center font-bold border-2 border-carbon-950 shadow-[0_0_10px_rgba(220,38,38,0.5)]">2</span>
+          {unreadNotifications > 0 ? (
+            <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1 rounded-lg bg-red-600 text-[10px] flex items-center justify-center font-bold border-2 border-carbon-950 shadow-[0_0_10px_rgba(220,38,38,0.5)]">
+              {unreadNotifications > 99 ? '99+' : unreadNotifications}
+            </span>
+          ) : null}
         </Link>
 
         <Link href="/profile" className="flex items-center gap-4 glass rounded-2xl px-4 py-2 hover:border-military-600 transition-all duration-300 group border border-military-800/30">
@@ -401,8 +414,24 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const clearAllAudiences = useAudiencesStore((s) => s.clearAllAudiences);
   const [orbitalOpen, setOrbitalOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const { unreadCount: unreadNotifications } = useNotificationAlerts({
+    accessToken,
+    userId: user?.id,
+    userRole: user?.role,
+    pollIntervalMs: isWaitingRoomRole(user?.role) ? 5000 : 30000,
+  });
 
   useEffect(() => setMounted(true), []);
+
+  useEffect(() => {
+    const unlock = () => unlockNotificationAudio();
+    window.addEventListener('pointerdown', unlock, { once: true });
+    window.addEventListener('keydown', unlock, { once: true });
+    return () => {
+      window.removeEventListener('pointerdown', unlock);
+      window.removeEventListener('keydown', unlock);
+    };
+  }, []);
 
   useEffect(() => {
     if (!isAuthenticated || !accessToken || !isApiConfigured()) return;
@@ -434,6 +463,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       if (retryTimer) clearTimeout(retryTimer);
     };
   }, [isAuthenticated, accessToken, user?.role, syncFromApi, syncWaitingRoomToday]);
+
+  useEffect(() => {
+    if (!isAuthenticated || !accessToken || !isApiConfigured()) return;
+    if (!receivesLiveAccompanimentUpdates(user?.role)) return;
+
+    const unsubscribe = subscribeAudienceSync((event) => {
+      if (event.type === 'confirmed' || event.type === 'accompaniment-completed') {
+        void syncWaitingRoomToday(accessToken);
+      }
+    });
+
+    return () => unsubscribe();
+  }, [isAuthenticated, accessToken, user?.role, syncWaitingRoomToday]);
 
   useEffect(() => {
     if (!isAuthenticated || !accessToken || !isApiConfigured()) return;
@@ -475,7 +517,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {isAuthenticated && <SidebarRail items={items} activePath={pathname} homeHref={homeHref} />}
 
       <div className={cn('flex-1 flex flex-col min-h-0 min-w-0', isAuthenticated && 'lg:ml-[80px]')}>
-        {isAuthenticated && <TopBar onOpenOrbital={() => setOrbitalOpen(true)} />}
+        {isAuthenticated && <TopBar onOpenOrbital={() => setOrbitalOpen(true)} unreadNotifications={unreadNotifications} />}
 
         <main className={cn('flex-1 min-h-0 overflow-y-auto', isAuthenticated && 'pb-28')}>
           {children}

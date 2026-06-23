@@ -57,7 +57,7 @@ export function audienceListWhereForRole(user: UserContext): Prisma.AudienceWher
     };
   }
 
-  // Logique spécifique pour le Chef de Cabinet
+  // Logique spécifique pour le Chef de Cabinet — Priorité 0 exclue (réservée CEMG / Protocol).
   if (role === UserRole.CHEF) {
     return {
       ...base,
@@ -82,23 +82,6 @@ export function audienceListWhereForRole(user: UserContext): Prisma.AudienceWher
             {
               status: AudienceStatus.EN_ATTENTE,
               visitTarget: { role: { not: UserRole.CEMG } },
-            },
-          ],
-        },
-        {
-          OR: [
-            { priority: { not: 'PRIORITE_0' } },
-            { status: AudienceStatus.TRANSMIS_DIRCAB },
-            { createdById: id },
-            { visitTargetUserId: id },
-            {
-              validations: {
-                some: {
-                  validator: { role: UserRole.CEMG },
-                  decision: 'EN_ATTENTE',
-                  comment: 'Transmise au Dircab',
-                },
-              },
             },
           ],
         },

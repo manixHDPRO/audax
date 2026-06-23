@@ -15,7 +15,7 @@ import { formatDate } from '@/lib/utils';
 import { normalizeAccompaniedPersons, describeStatusHistoryEntry, formatUserName, sortStatusHistoryNewestFirst, isAudienceAtCabinet, isCemgCabinetHistoryAudience, isProtocolCemgConfirmQueue, isProtocolCemgReceptionQueue, isSalleReceptionAudience } from '@/lib/audience-utils';
 import { PRIORITY_LABELS, CONFIDENTIALITY_LABELS, type Audience, type AudienceStatus } from '@/types';
 import { deleteAudienceApi, forwardToDircabApi, validateAudienceApi, completeReceptionApi, confirmAudienceApi, closeAudienceApi } from '@/lib/api-client';
-import { notifyAudienceSync } from '@/lib/audience-sync-bus';
+import { notifyAudienceSync, buildForwardAlertSync, buildValidationAlertSync, buildProtocolFollowUpAlertSync } from '@/lib/audience-sync-bus';
 import {
   useAuthStore,
   canDeleteAudience,
@@ -109,6 +109,7 @@ export default function AudienceDetailPage({ params }: { params: Promise<{ id: s
       notifyAudienceSync({
         type: decision === 'APPROUVE' && user?.role === 'CHEF' ? 'confirmed' : 'updated',
         audienceId: displayAudience.id,
+        ...buildValidationAlertSync(decision, user?.role ?? undefined),
       });
       const refreshed = await fetchAudienceById(accessToken, displayAudience.id, { force: true });
       if (refreshed) setDetail(refreshed);
@@ -128,7 +129,11 @@ export default function AudienceDetailPage({ params }: { params: Promise<{ id: s
       await forwardToDircabApi(accessToken, displayAudience.id);
       const nextStatus: AudienceStatus = user?.role === 'CEMG' ? 'TRANSMIS_DIRCAB' : 'DEJA_ENVOYE';
       patchAudienceStatus(displayAudience.id, nextStatus);
-      notifyAudienceSync({ type: 'updated', audienceId: displayAudience.id });
+      notifyAudienceSync({
+        type: 'updated',
+        audienceId: displayAudience.id,
+        ...buildForwardAlertSync(user?.role === 'CEMG'),
+      });
       const refreshed = await fetchAudienceById(accessToken, displayAudience.id, { force: true });
       if (refreshed) setDetail(refreshed);
       setDircabDialogOpen(false);
@@ -154,7 +159,11 @@ export default function AudienceDetailPage({ params }: { params: Promise<{ id: s
     try {
       await confirmAudienceApi(accessToken, displayAudience.id);
       patchAudienceStatus(displayAudience.id, 'CONFIRMEE');
-      notifyAudienceSync({ type: 'confirmed', audienceId: displayAudience.id });
+      notifyAudienceSync({
+        type: 'confirmed',
+        audienceId: displayAudience.id,
+        ...buildProtocolFollowUpAlertSync(),
+      });
       const refreshed = await fetchAudienceById(accessToken, displayAudience.id, { force: true });
       if (refreshed) setDetail(refreshed);
       setConfirmDialogOpen(false);

@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/button';
 import { useAudiencesStore } from '@/stores/audiences-store';
 import { useAuthStore, isWaitingRoomRole } from '@/stores/auth-store';
 import { createAudienceApi, listVisitTargetsApi, searchRequestersFromAudiencesApi, checkDuplicateTodayApi, type RequesterSearchResult, type DuplicateTodayResult } from '@/lib/api-client';
+import { notifyAudienceSync, buildCreateAudienceAlertSync } from '@/lib/audience-sync-bus';
 import { formatAccompaniedPerson } from '@/lib/audience-utils';
 import type { Audience, Priority, Confidentiality, VisitMode, AccompaniedPerson, UserRole } from '@/types';
 import { ROLE_LABELS } from '@/types';
@@ -369,6 +370,11 @@ export function NewAudienceModal({ open, onOpenChange }: NewAudienceModalProps) 
         });
         await useAudiencesStore.getState().syncFromApi(accessToken);
       }
+      notifyAudienceSync({
+        type: 'created',
+        audienceId: createdApi.id,
+        ...buildCreateAudienceAlertSync(selectedTarget?.role, payload.priority),
+      });
       setSuccess({ reference: createdApi.reference, id: createdApi.id, priorite0: isPriorite0 });
       setLoading(false);
       setTimeout(() => {

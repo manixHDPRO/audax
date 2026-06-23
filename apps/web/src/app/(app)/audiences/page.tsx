@@ -29,7 +29,7 @@ import {
   type ReceptionPendingApiRecord,
 } from '@/lib/api-client';
 import { notifyAudienceSync, subscribeAudienceSync } from '@/lib/audience-sync-bus';
-import { filterAudiencesByOrgUnit, isCemgPilotageAudience } from '@/lib/audience-utils';
+import { filterAudiencesByOrgUnit, isCemgPilotageAudience, isPriorite0HiddenFromChef } from '@/lib/audience-utils';
 
 function readStoredViewMode(): AudienceListViewMode {
   if (typeof window === 'undefined') return 'table';
@@ -217,6 +217,8 @@ export default function AudiencesPage() {
     const source =
       user?.role === 'CEMG'
         ? audiences.filter((a) => isCemgPilotageAudience(a, user.role))
+        : user?.role === 'CHEF'
+          ? audiences.filter((a) => !isPriorite0HiddenFromChef(a, 'CHEF'))
         : isAdmin
           ? filterAudiencesByOrgUnit(audiences, {
               cabinetId: cabinetFilter === 'ALL' ? undefined : cabinetFilter,

@@ -41,6 +41,8 @@ export default function DashboardPage() {
   const role = user?.role;
   const isCemg = role === 'CEMG';
   const isAdmin = role === 'ADMIN';
+  const isChef = role === 'CHEF';
+  const showPriorite0Section = isAdmin || isCemg || role === 'PROTOCOL';
   const adminOverview = isAdmin ? getAdminAudienceOverviewStats(audiences) : null;
 
   useEffect(() => {
@@ -100,7 +102,9 @@ export default function DashboardPage() {
     : metricsPool.filter((a) =>
         ['EN_ATTENTE', 'DEJA_ENVOYE', 'EN_ANALYSE', 'PLANIFIEE', 'VALIDEE', 'CONFIRMEE'].includes(a.status),
       );
-  const priority0 = visibleAudiences.filter((a) => a.priority === 'PRIORITE_0');
+  const priority0 = showPriorite0Section
+    ? visibleAudiences.filter((a) => a.priority === 'PRIORITE_0')
+    : [];
   const otherAudiences = visibleAudiences.filter((a) => a.priority !== 'PRIORITE_0');
 
   /** Opérations du jour : périmètre pilotage / métriques du rôle. */
@@ -208,8 +212,9 @@ export default function DashboardPage() {
                 </Link>
               </CardHeader>
               
-              <div className="grid md:grid-cols-2 gap-8 flex-1">
-                {/* Column 1: Priority 0 */}
+              <div className={cn('grid gap-8 flex-1', showPriorite0Section ? 'md:grid-cols-2' : 'grid-cols-1')}>
+                {showPriorite0Section ? (
+                /* Column 1: Priority 0 */
                 <div className="space-y-4">
                   <div className="flex items-center gap-2 mb-4">
                     <div className="w-1.5 h-1.5 rounded-full bg-gold-500" />
@@ -243,12 +248,15 @@ export default function DashboardPage() {
                     )}
                   </div>
                 </div>
+                ) : null}
 
-                {/* Column 2: Others */}
-                <div className="space-y-4 border-l border-military-800/30 pl-8">
+                {/* Autres audiences */}
+                <div className={cn('space-y-4', showPriorite0Section && 'border-l border-military-800/30 pl-8')}>
                   <div className="flex items-center gap-2 mb-4">
                     <div className="w-1.5 h-1.5 rounded-full bg-military-500" />
-                    <h3 className="text-xs font-mono font-bold text-military-500 uppercase tracking-[0.2em]">Autres Audiences</h3>
+                    <h3 className="text-xs font-mono font-bold text-military-500 uppercase tracking-[0.2em]">
+                      {showPriorite0Section ? 'Autres Audiences' : isChef ? 'Audiences du Cabinet' : 'Autres Audiences'}
+                    </h3>
                   </div>
                   <div className="space-y-3">
                     {otherAudiences.length ? otherAudiences.map((aud) => (
