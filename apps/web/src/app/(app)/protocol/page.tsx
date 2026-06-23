@@ -1,12 +1,11 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { 
   Shield, 
   UserCheck, 
   Clock, 
-  Calendar, 
   Navigation, 
   CheckCircle2, 
   AlertTriangle,
@@ -20,7 +19,7 @@ import { Button } from '@/components/ui/button';
 import { StatusBadge, PriorityBadge } from '@/components/ui/badge';
 import { useAuthStore } from '@/stores/auth-store';
 import { useAudiencesStore } from '@/stores/audiences-store';
-import { formatDate, formatDateShort, cn } from '@/lib/utils';
+import { cn } from '@/lib/utils';
 import { confirmAudienceApi, completeReceptionApi, forwardToDircabApi } from '@/lib/api-client';
 import { notifyAudienceSync, buildForwardAlertSync, buildProtocolFollowUpAlertSync } from '@/lib/audience-sync-bus';
 import {
@@ -33,7 +32,7 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import Link from 'next/link';
 
 export default function ProtocolTrackingPage() {
-  const { user, accessToken } = useAuthStore();
+  const { accessToken } = useAuthStore();
   const audiences = useAudiencesStore((s) => s.audiences);
   const fetchAudiences = useAudiencesStore((s) => s.syncFromApi);
   const patchAudienceStatus = useAudiencesStore((s) => s.patchAudienceStatus);
@@ -83,17 +82,7 @@ export default function ProtocolTrackingPage() {
     [audiences],
   );
 
-  // 3. Agenda du jour
-  const todayAgenda = useMemo(() => {
-    const now = new Date();
-    return audiences.filter(a => {
-      if (!a.scheduledAt) return false;
-      const d = new Date(a.scheduledAt);
-      return d.toLocaleDateString('fr-FR') === now.toLocaleDateString('fr-FR');
-    }).sort((a, b) => new Date(a.scheduledAt!).getTime() - new Date(b.scheduledAt!).getTime());
-  }, [audiences]);
-
-  const filteredToForward = toForward.filter(a => 
+  const filteredToForward = toForward.filter(a =>
     !search || 
     a.reference.toLowerCase().includes(search.toLowerCase()) || 
     a.requesterName.toLowerCase().includes(search.toLowerCase()) ||
@@ -394,7 +383,7 @@ export default function ProtocolTrackingPage() {
         </motion.div>
 
         {/* Stats Summary */}
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <Card tactical className="bg-military-900/10 border-military-800/30 cursor-pointer hover:border-blue-500/30 transition-colors" onClick={() => setActiveTab('forward')}>
             <div className="flex items-center gap-4">
               <div className="p-3 rounded-xl bg-blue-500/10 text-blue-500 border border-blue-500/20">
@@ -439,23 +428,10 @@ export default function ProtocolTrackingPage() {
               </div>
             </div>
           </Card>
-          <Card tactical className="bg-military-900/10 border-military-800/30">
-            <div className="flex items-center gap-4">
-              <div className="p-3 rounded-xl bg-military-500/10 text-military-500 border border-military-500/20">
-                <Calendar className="w-6 h-6" />
-              </div>
-              <div>
-                <p className="text-[10px] text-military-500 uppercase tracking-widest font-mono font-bold">Agenda J-0</p>
-                <p className="text-3xl font-bold text-cream font-display">{todayAgenda.length}</p>
-              </div>
-            </div>
-          </Card>
         </div>
 
-        <div className="grid lg:grid-cols-3 gap-8">
-          {/* Main Column: Tracking */}
-          <div className="lg:col-span-2 space-y-8">
-            {/* Search bar */}
+        <div className="space-y-8">
+          {/* Search bar */}
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-cream/30" />
               <input
@@ -510,60 +486,20 @@ export default function ProtocolTrackingPage() {
                 {renderTabContent()}
               </div>
             </Card>
-          </div>
 
-          {/* Right Column: Agenda & Info */}
-          <div className="space-y-8">
-            {/* Agenda J-0 */}
-            <Card tactical glow className="h-full">
-              <CardHeader className="border-b border-military-800/50 pb-4 mb-6">
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <Calendar className="w-5 h-5 text-gold-500" />
-                  Agenda CEMG — J-0
-                </CardTitle>
-                <CardDescription className="font-mono text-[10px] uppercase tracking-wider">
-                  {todayAgenda.length} engagements planifiés aujourd&apos;hui
-                </CardDescription>
-              </CardHeader>
-              
-              <div className="space-y-4">
-                {todayAgenda.length ? todayAgenda.map((item) => (
-                  <div key={item.id} className="relative pl-6 before:absolute before:left-0 before:top-2 before:bottom-2 before:w-0.5 before:bg-military-800">
-                    <div className="absolute left-[-3px] top-2 w-2 h-2 rounded-full bg-military-600" />
-                    <div className="p-4 rounded-xl bg-carbon-800/30 border border-military-800/20 group hover:border-military-700/50 transition-all">
-                      <div className="flex justify-between items-start mb-1">
-                        <span className="text-[10px] font-mono text-gold-500 font-bold">
-                          {new Date(item.scheduledAt!).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
-                        </span>
-                        <StatusBadge status={item.status} className="scale-75 origin-right" />
-                      </div>
-                      <p className="text-sm font-bold text-cream group-hover:text-military-300 transition-colors line-clamp-2">{item.subject}</p>
-                      <p className="text-[10px] text-cream/30 mt-2 uppercase tracking-widest">{item.requesterName}</p>
-                    </div>
-                  </div>
-                )) : (
-                  <div className="py-12 text-center border border-dashed border-military-900/30 rounded-2xl opacity-20">
-                    <p className="text-xs font-mono uppercase tracking-[0.2em]">Aucun engagement</p>
-                  </div>
-                )}
-              </div>
-            </Card>
-
-            {/* Instructions Protocol */}
-            <Card className="bg-gold-950/10 border-gold-500/20">
-              <CardHeader>
-                <CardTitle className="text-sm text-gold-500 flex items-center gap-2">
-                  <AlertTriangle className="w-4 h-4" />
-                  Rappel Mission Protocol
-                </CardTitle>
-              </CardHeader>
-              <div className="p-4 pt-0 space-y-3 text-xs text-cream/60 leading-relaxed">
-                <p>1. <strong className="text-cream">Suivi :</strong> Confirmez systématiquement les audiences validées pour informer la salle d&apos;attente.</p>
-                <p>2. <strong className="text-cream">Réception :</strong> Attestez la présence effective du demandeur dès son entrée en bureau.</p>
-                <p>3. <strong className="text-cream">Coordination :</strong> Maintenez le contact avec les agents d&apos;accompagnement via le statut CONFIRMÉE.</p>
-              </div>
-            </Card>
-          </div>
+          <Card className="bg-gold-950/10 border-gold-500/20">
+            <CardHeader>
+              <CardTitle className="text-sm text-gold-500 flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4" />
+                Rappel Mission Protocol
+              </CardTitle>
+            </CardHeader>
+            <div className="p-4 pt-0 space-y-3 text-xs text-cream/60 leading-relaxed">
+              <p>1. <strong className="text-cream">Suivi :</strong> Confirmez systématiquement les audiences validées pour informer la salle d&apos;attente.</p>
+              <p>2. <strong className="text-cream">Réception :</strong> Attestez la présence effective du demandeur dès son entrée en bureau.</p>
+              <p>3. <strong className="text-cream">Coordination :</strong> Maintenez le contact avec les agents d&apos;accompagnement via le statut CONFIRMÉE.</p>
+            </div>
+          </Card>
         </div>
 
         {/* Dialogs */}
