@@ -146,7 +146,11 @@ export function UsersManagementTab() {
                         <>
                           <span className="text-[10px] text-cream/20">•</span>
                           <p className="text-[10px] text-gold-500/60 font-medium uppercase tracking-wider">
-                            {u.cabinet ? `Cabinet: ${u.cabinet.name}` : `Bureau: ${u.bureau.name}`}
+                            {u.cabinet
+                              ? `Cabinet: ${u.cabinet.name}`
+                              : u.bureau
+                                ? `Bureau: ${u.bureau.name}`
+                                : ''}
                           </p>
                         </>
                       )}

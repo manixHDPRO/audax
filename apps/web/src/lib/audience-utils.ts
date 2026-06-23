@@ -1,4 +1,4 @@
-import type { AccompaniedPerson, Audience, AudienceStatus, AudienceStatusHistoryEntry, AudienceValidationEntry } from '@/types';
+import type { AccompaniedPerson, Audience, AudienceStatus, AudienceStatusHistoryEntry, AudienceValidationEntry, Room, UserRole } from '@/types';
 import { STATUS_LABELS } from '@/types';
 import type { AudienceApiRecord } from '@/lib/api-client';
 
@@ -129,6 +129,23 @@ export function nextAudienceReference(existingReferences: string[], date = new D
   return `AUD-${prefix}-${String(next).padStart(4, '0')}`;
 }
 
+function mapVisitors(
+  entries?: AudienceApiRecord['visitors'],
+): Audience['visitors'] {
+  if (!entries?.length) return undefined;
+  return entries.map(({ visitor }) => ({
+    visitor: {
+      id: visitor.id,
+      firstName: visitor.firstName,
+      lastName: visitor.lastName,
+      organization: visitor.organization ?? undefined,
+      function: visitor.function ?? undefined,
+      accessLevel: visitor.accessLevel ?? 'STANDARD',
+      badgeCode: visitor.badgeCode ?? undefined,
+    },
+  }));
+}
+
 export function mapApiAudience(record: AudienceApiRecord): Audience {
   return {
     id: record.id,
@@ -143,10 +160,14 @@ export function mapApiAudience(record: AudienceApiRecord): Audience {
     category: record.category,
     scheduledAt: record.scheduledAt ?? undefined,
     createdAt: record.createdAt,
-    room: record.room ?? undefined,
-    visitors: record.visitors,
+    room: record.room
+      ? { ...record.room, status: record.room.status as Room['status'] }
+      : undefined,
+    visitors: mapVisitors(record.visitors),
     createdBy: record.createdBy ?? undefined,
-    visitTarget: record.visitTarget ?? undefined,
+    visitTarget: record.visitTarget
+      ? { ...record.visitTarget, role: record.visitTarget.role as UserRole | undefined }
+      : undefined,
     statusHistory: mapStatusHistory(record.statusHistory),
     validations: mapValidations(record.validations),
   };
@@ -209,7 +230,7 @@ export function hasCemgDircabDelegation(audience: Pick<Audience, 'validations'>)
 
 /** Dossier confié au DirCab par le CEMG (hors simple transmission Protocol). */
 export function isDelegatedToDircab(
-  audience: Pick<Audience, 'status' | 'statusHistory' | 'validations'>,
+  audience: Pick<Audience, 'statusHistory' | 'validations'> & { status?: Audience['status'] },
 ): boolean {
   if (audience.status === 'TRANSMIS_DIRCAB') return true;
   if (hasCemgDircabDelegation(audience)) return true;

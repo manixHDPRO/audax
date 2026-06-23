@@ -48,7 +48,7 @@ export function RegisterVisitorModal({ open, onOpenChange, onRegistered }: Regis
   const [success, setSuccess] = useState<{ firstName: string; lastName: string; badgeCode?: string | null } | null>(null);
   const [searchResults, setSearchResults] = useState<VisitorLookupResult[] | null>(null);
   const [showSearchResults, setShowSearchResults] = useState(false);
-  const searchDebounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const resetForm = () => {
     setFullName('');
