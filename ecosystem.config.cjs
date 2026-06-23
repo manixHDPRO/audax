@@ -1,4 +1,4 @@
-/** PM2 — déploiement VPS sans Docker */
+/** PM2 — déploiement VPS sans Docker (monorepo npm workspaces) */
 module.exports = {
   apps: [
     {
@@ -16,7 +16,8 @@ module.exports = {
     {
       name: 'audax-web',
       cwd: './apps/web',
-      script: 'node_modules/.bin/next',
+      // next est hoisté à la racine du monorepo, pas dans apps/web/node_modules
+      script: '../../node_modules/.bin/next',
       args: 'start -p 3000 -H 0.0.0.0',
       interpreter: 'none',
       exec_mode: 'fork',

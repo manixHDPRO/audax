@@ -62,12 +62,12 @@ set +a
 echo "==> Installation des dépendances"
 npm ci
 
-echo "==> Build API + Web"
-npm run build
-
 echo "==> Prisma (generate + migrations)"
 npm run db:generate
 npm run db:migrate:deploy
+
+echo "==> Build API + Web"
+npm run build
 
 if [ "$SEED" = true ]; then
   echo "==> Seed des données initiales"

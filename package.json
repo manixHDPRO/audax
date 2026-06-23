@@ -12,6 +12,7 @@
     "dev:web": "npm run dev --workspace=apps/web",
     "dev:api": "npm run start:dev --workspace=apps/api",
     "dev:all": "concurrently \"npm run dev:api\" \"npm run dev:web\"",
+    "prebuild": "npm run db:generate",
     "build": "npm run build --workspace=apps/api && npm run build --workspace=apps/web",
     "db:generate": "npm run prisma:generate --workspace=apps/api",
     "db:migrate": "npm run prisma:migrate --workspace=apps/api",
