@@ -1,0 +1,5 @@
+# Projet Supabase AUDAX — https://supabase.com/dashboard/project/kscqydofhvbkkkdwgbfh
+project_id = "kscqydofhvbkkkdwgbfh"
+
+[db]
+major_version = 17

@@ -8,6 +8,25 @@
 - **Agenda drag & drop** — Replanification avec détection de conflits
 - **Docker + CI/CD** — Stack complète et pipeline GitHub Actions
 
+## Base de données (Supabase)
+
+Le projet utilise **Supabase** (PostgreSQL hébergé, région `eu-west-1`) :
+
+| Paramètre | Valeur |
+|-----------|--------|
+| Dashboard | [projet audax](https://supabase.com/dashboard/project/kscqydofhvbkkkdwgbfh) |
+| API URL | `https://kscqydofhvbkkkdwgbfh.supabase.co` |
+
+```bash
+copy .env.example .env
+# Renseigner YOUR_DB_PASSWORD (Dashboard → Project Settings → Database)
+npm run db:generate
+powershell -ExecutionPolicy Bypass -File scripts/baseline-supabase.ps1 -Seed
+npm run dev
+```
+
+Pour le dev local avec Docker Postgres, décommentez les lignes `localhost` dans `.env`.
+
 ## Démarrage rapide
 
 ```bash
