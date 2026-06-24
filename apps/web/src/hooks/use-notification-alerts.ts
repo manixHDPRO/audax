@@ -38,9 +38,9 @@ export function useNotificationAlerts({
     (type: NotificationSoundType) => {
       if (!userId) return;
       const preferences = readNotificationSoundPreferences(userId);
-      playNotificationSound(type, preferences);
+      playNotificationSound(type, preferences, userRole);
     },
-    [userId],
+    [userId, userRole],
   );
 
   const handleNotifications = useCallback(
@@ -58,7 +58,7 @@ export function useNotificationAlerts({
         const preferences = readNotificationSoundPreferences(userId);
         for (const notification of unread) {
           if (!knownIdsRef.current.has(notification.id)) {
-            playNotificationSound(toSoundType(notification.type), preferences);
+            playNotificationSound(toSoundType(notification.type), preferences, userRole);
           }
         }
       }
@@ -66,7 +66,7 @@ export function useNotificationAlerts({
       knownIdsRef.current = new Set(list.map((n) => n.id));
       initializedRef.current = true;
     },
-    [userId],
+    [userId, userRole],
   );
 
   const refreshNotifications = useCallback(
@@ -108,19 +108,20 @@ export function useNotificationAlerts({
     const interval = setInterval(() => void run(true), pollIntervalMs);
 
     const unsubscribeSync = subscribeAudienceSync((event) => {
-      if (userRole && event.alertRoles?.includes(userRole)) {
+      const playsForMe = Boolean(userRole && event.alertRoles?.includes(userRole));
+      if (playsForMe) {
         const soundType =
-          event.alertSoundByRole?.[userRole] ?? event.soundType ?? 'INFO';
+          event.alertSoundByRole?.[userRole!] ?? event.soundType ?? 'INFO';
         playForUser(soundType);
       }
       window.setTimeout(() => {
-        void run(true);
+        void refreshNotifications(playsForMe);
       }, event.type === 'created' ? 200 : 100);
     });
 
     const disconnectStream = connectNotificationStream(accessToken, (payload) => {
       playForUser(payload.type);
-      void refreshNotifications(true);
+      void refreshNotifications(false);
     });
 
     return () => {

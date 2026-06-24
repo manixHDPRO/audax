@@ -47,7 +47,7 @@ export function buildCreateAudienceAlertSync(
 
   if (visitTargetRole !== 'CEMG' && priority !== 'PRIORITE_0') {
     alertRoles.push('CHEF');
-    alertSoundByRole.CHEF = 'INFO';
+    alertSoundByRole.CHEF = 'WARNING';
   }
 
   return {

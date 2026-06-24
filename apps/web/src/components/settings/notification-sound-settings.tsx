@@ -5,10 +5,11 @@ import { Volume2 } from 'lucide-react';
 import { Card, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useAuthStore } from '@/stores/auth-store';
-import type { Notification } from '@/types';
+import { ROLE_LABELS, type Notification } from '@/types';
 import {
   DEFAULT_NOTIFICATION_SOUND_PREFERENCES,
   NOTIFICATION_SOUND_LABELS,
+  ROLE_SOUND_DESCRIPTIONS,
   playNotificationSound,
   readNotificationSoundPreferences,
   unlockNotificationAudio,
@@ -38,7 +39,7 @@ export function NotificationSoundSettings() {
 
   const handleTest = (type: Notification['type']) => {
     unlockNotificationAudio();
-    playNotificationSound(type, preferences);
+    playNotificationSound(type, preferences, user.role);
   };
 
   if (!user?.id) return null;
@@ -82,8 +83,15 @@ export function NotificationSoundSettings() {
             aria-label="Intensité des notifications sonores"
           />
           <p className="text-[11px] text-cream/35">
-            Signal d&apos;attention renforcé — triple bip (info), sirène (critique).
+            Chaque rôle possède un timbre distinct — gravité modulée par type d&apos;alerte.
           </p>
+        </div>
+
+        <div className="p-3 rounded-xl bg-military-900/20 border border-military-800/30">
+          <p className="text-xs font-mono uppercase tracking-wider text-military-400 mb-1">
+            Votre signal — {ROLE_LABELS[user.role]}
+          </p>
+          <p className="text-sm text-cream/60">{ROLE_SOUND_DESCRIPTIONS[user.role]}</p>
         </div>
 
         <div className="space-y-2">

@@ -36,9 +36,61 @@ function pickSalleRecipients(
   return matched;
 }
 
+function pickChefRecipients(
+  users: Array<{ id: string; role: UserRole; cabinetId: string | null; bureauId: string | null }>,
+  scope: VisitTargetScope,
+  audience: AudienceNotify,
+): typeof users {
+  if (scope.role === UserRole.CEMG || audience.priority === 'PRIORITE_0') {
+    return [];
+  }
+
+  const chefs = users.filter((user) => user.role === UserRole.CHEF);
+  const matched = chefs.filter(
+    (user) =>
+      (audience.visitTargetUserId != null && user.id === audience.visitTargetUserId) ||
+      isSameOrgUnitAsVisitTarget(user, scope),
+  );
+  if (matched.length) return matched;
+
+  // Circuit direct Cabinet (cible Chef / même org) — mono-cabinet.
+  if (scope.role === UserRole.CHEF || scope.role === UserRole.SECRETAIRE) {
+    return chefs;
+  }
+
+  return matched;
+}
+
+function pickProtocolRecipients(
+  users: Array<{ id: string; cabinetId: string | null; bureauId: string | null }>,
+  scope: VisitTargetScope,
+): typeof users {
+  const matched = users.filter((user) => isSameOrgUnitAsVisitTarget(user, scope));
+  if (matched.length) return matched;
+
+  // Circuit CEMG — mono-cabinet : tous les agents Protocol actifs.
+  if (scope.role === UserRole.CEMG) return users;
+
+  return matched;
+}
+
+function pickCemgRecipients(
+  users: Array<{ id: string; cabinetId: string | null; bureauId: string | null }>,
+  scope: VisitTargetScope,
+): typeof users {
+  const matched = users.filter((user) => isSameOrgUnitAsVisitTarget(user, scope));
+  if (matched.length) return matched;
+
+  if (scope.role === UserRole.CEMG) return users;
+
+  return matched;
+}
+
 export type AudienceCreatedNotifyResult = {
   recipientIds: string[];
   criticalRecipientIds: string[];
+  chefRecipientIds: string[];
+  protocolRecipientIds: string[];
 };
 
 type VisitTargetScope = {
@@ -86,20 +138,15 @@ export async function notifyAudienceCreated(
     (user) => user.role === UserRole.PROTOCOL && scope.role === UserRole.CEMG,
   );
 
-  const chefRecipients = users.filter((user) => {
-    if (user.role !== UserRole.CHEF) return false;
-    if (isPriorite0) return false;
-    if (scope.role === UserRole.CEMG) return false;
-    if (audience.visitTargetUserId && user.id === audience.visitTargetUserId) return true;
-    return isSameOrgUnitAsVisitTarget(user, scope);
-  });
+  const chefRecipients = pickChefRecipients(users, scope, audience);
 
   const cemgRecipients = isPriorite0
     ? users.filter((user) => user.role === UserRole.CEMG)
     : [];
 
-  const standardRecipients = [...protocolRecipients, ...chefRecipients];
-  const uniqueStandard = [...new Map(standardRecipients.map((u) => [u.id, u])).values()];
+  const uniqueProtocol = [...new Map(protocolRecipients.map((u) => [u.id, u])).values()];
+  const uniqueChef = [...new Map(chefRecipients.map((u) => [u.id, u])).values()];
+  const uniqueStandard = [...new Map([...uniqueProtocol, ...uniqueChef].map((u) => [u.id, u])).values()];
   const uniqueCemg = [...new Map(cemgRecipients.map((u) => [u.id, u])).values()];
 
   if (uniqueStandard.length) {
@@ -127,11 +174,13 @@ export async function notifyAudienceCreated(
   }
 
   const criticalRecipientIds = uniqueCemg.map((u) => u.id);
+  const chefRecipientIds = uniqueChef.map((u) => u.id);
+  const protocolRecipientIds = uniqueProtocol.map((u) => u.id);
   const recipientIds = [
     ...new Set([...uniqueStandard.map((u) => u.id), ...criticalRecipientIds]),
   ];
 
-  return { recipientIds, criticalRecipientIds };
+  return { recipientIds, criticalRecipientIds, chefRecipientIds, protocolRecipientIds };
 }
 
 /** Protocol a transmis une audience CEMG au Cabinet — alerte le CEMG (pas le Chef de Cabinet). */
@@ -150,7 +199,7 @@ export async function notifyCemgOnProtocolCabinetForward(
     select: { id: true, cabinetId: true, bureauId: true },
   });
 
-  const recipients = users.filter((user) => isSameOrgUnitAsVisitTarget(user, scope));
+  const recipients = pickCemgRecipients(users, scope);
   if (!recipients.length) return [];
 
   await prisma.notification.createMany({
@@ -183,10 +232,7 @@ export async function notifyAudienceForwardedToDircab(
     select: { id: true, role: true, cabinetId: true, bureauId: true },
   });
 
-  const recipients = users.filter((user) => {
-    if (audience.visitTargetUserId && user.id === audience.visitTargetUserId) return true;
-    return isSameOrgUnitAsVisitTarget(user, scope);
-  });
+  const recipients = pickChefRecipients(users, scope, audience);
 
   if (!recipients.length) return [];
 
@@ -253,7 +299,7 @@ export async function notifyProtocolOnCemgValidation(
     select: { id: true, cabinetId: true, bureauId: true },
   });
 
-  const recipients = users.filter((user) => isSameOrgUnitAsVisitTarget(user, scope));
+  const recipients = pickProtocolRecipients(users, scope);
   if (!recipients.length) return [];
 
   await prisma.notification.createMany({

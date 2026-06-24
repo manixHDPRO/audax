@@ -382,7 +382,8 @@ export class AudiencesService {
       include: { visitors: { include: { visitor: true } } },
     });
 
-    const { recipientIds, criticalRecipientIds } = await notifyAudienceCreated(this.prisma, {
+    const { criticalRecipientIds, chefRecipientIds, protocolRecipientIds } =
+      await notifyAudienceCreated(this.prisma, {
       id: audience.id,
       reference,
       subject: dto.subject,
@@ -391,9 +392,14 @@ export class AudiencesService {
       priority: dto.priority,
     });
 
-    const infoRecipientIds = recipientIds.filter((id) => !criticalRecipientIds.includes(id));
-    this.pushLiveAlerts(infoRecipientIds, {
+    this.pushLiveAlerts(protocolRecipientIds, {
       type: 'INFO',
+      title: 'Nouvelle demande d\'audience',
+      message: `${reference} — ${dto.subject}`,
+      audienceId: audience.id,
+    });
+    this.pushLiveAlerts(chefRecipientIds, {
+      type: 'WARNING',
       title: 'Nouvelle demande d\'audience',
       message: `${reference} — ${dto.subject}`,
       audienceId: audience.id,

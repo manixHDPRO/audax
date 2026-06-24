@@ -89,23 +89,42 @@ export function audienceListWhereForRole(user: UserContext): Prisma.AudienceWher
     };
   }
 
-  // Logique spécifique pour le CEMG — accès après transmission Protocol (hors EN_ATTENTE)
+  // CEMG : circuit CEMG uniquement (pas les audiences directes Chef de Cabinet).
   if (role === UserRole.CEMG) {
     return {
       ...base,
-      ...assignmentFilter,
-      status: {
-        in: [
-          AudienceStatus.DEJA_ENVOYE,
-          AudienceStatus.TRANSMIS_DIRCAB,
-          AudienceStatus.EN_ANALYSE,
-          AudienceStatus.VALIDEE,
-          AudienceStatus.PLANIFIEE,
-          AudienceStatus.CONFIRMEE,
-          AudienceStatus.TERMINEE,
-          AudienceStatus.REJETEE,
-        ],
-      },
+      AND: [
+        {
+          OR: [
+            { visitTarget: { role: UserRole.CEMG } },
+            { status: AudienceStatus.TRANSMIS_DIRCAB },
+            {
+              statusHistory: {
+                some: {
+                  OR: [
+                    { toStatus: AudienceStatus.TRANSMIS_DIRCAB },
+                    { comment: { startsWith: 'Transmise au Dircab' } },
+                  ],
+                },
+              },
+            },
+          ],
+        },
+        {
+          status: {
+            in: [
+              AudienceStatus.DEJA_ENVOYE,
+              AudienceStatus.TRANSMIS_DIRCAB,
+              AudienceStatus.EN_ANALYSE,
+              AudienceStatus.VALIDEE,
+              AudienceStatus.PLANIFIEE,
+              AudienceStatus.CONFIRMEE,
+              AudienceStatus.TERMINEE,
+              AudienceStatus.REJETEE,
+            ],
+          },
+        },
+      ],
     };
   }
 

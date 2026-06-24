@@ -45,6 +45,13 @@ export function assertCanViewAudience(audience: AudienceAccessRecord, user: User
     return;
   }
 
+  if (role === UserRole.CEMG) {
+    if (audience.visitTarget?.role === UserRole.CEMG) {
+      return;
+    }
+    throw new NotFoundException('Audience introuvable');
+  }
+
   if (role === UserRole.PROTOCOL) {
     if (audience.visitTarget?.role === UserRole.CEMG) return;
     throw new NotFoundException('Audience introuvable');
@@ -54,13 +61,8 @@ export function assertCanViewAudience(audience: AudienceAccessRecord, user: User
   const isDirectTarget = audience.visitTargetUserId === id;
   const sameCabinet = Boolean(cabinetId && audience.visitTarget?.cabinetId === cabinetId);
   const sameBureau = Boolean(bureauId && audience.visitTarget?.bureauId === bureauId);
-  const targetsCEMG = audience.visitTarget?.role === UserRole.CEMG;
 
   if (isCreator || isDirectTarget || sameCabinet || sameBureau) return;
-
-  if ((role === UserRole.PROTOCOL || role === UserRole.CEMG) && targetsCEMG) {
-    return;
-  }
 
   throw new NotFoundException('Audience introuvable');
 }

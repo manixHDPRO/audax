@@ -371,6 +371,8 @@ export function isInCemgWaitingQueue(audience: Audience, role?: string): boolean
   // Tant que le Protocol n'a pas transmis, le dossier reste hors pilotage CEMG.
   if (audience.status === 'EN_ATTENTE') return false;
 
+  if (!isCemgRelatedAudience(audience)) return false;
+
   const activeStatuses: AudienceStatus[] = [
     'DEJA_ENVOYE',
     'EN_ANALYSE',
