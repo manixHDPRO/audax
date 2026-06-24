@@ -373,7 +373,7 @@ export function NewAudienceModal({ open, onOpenChange }: NewAudienceModalProps) 
       notifyAudienceSync({
         type: 'created',
         audienceId: createdApi.id,
-        ...buildCreateAudienceAlertSync(selectedTarget?.role, payload.priority),
+        ...buildCreateAudienceAlertSync(selectedTarget?.role as UserRole | undefined, payload.priority),
       });
       setSuccess({ reference: createdApi.reference, id: createdApi.id, priorite0: isPriorite0 });
       setLoading(false);
