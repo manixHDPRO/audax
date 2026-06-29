@@ -65,6 +65,16 @@ export const PERMISSIONS = {
     UserRole.OBSERVATEUR,
     UserRole.ASSISTANT,
   ],
+  MENU_CHAT: [
+    UserRole.ADMIN,
+    UserRole.CHEF,
+    UserRole.SECRETAIRE,
+    UserRole.PROTOCOL,
+    UserRole.CEMG,
+    UserRole.SALLE_ATTENTE,
+    UserRole.OBSERVATEUR,
+    UserRole.ASSISTANT,
+  ],
   MENU_SETTINGS: [
     UserRole.ADMIN,
     UserRole.CHEF,

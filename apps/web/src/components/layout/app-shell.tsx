@@ -15,6 +15,7 @@ import {
   Calendar,
   FileText,
   Bell,
+  MessageSquare,
   Settings,
   Shield,
   Plus,
@@ -38,6 +39,7 @@ import { useAudiencesStore } from '@/stores/audiences-store';
 import { isApiConfigured } from '@/lib/api-config';
 import { unlockNotificationAudio } from '@/lib/notification-sounds';
 import { useNotificationAlerts } from '@/hooks/use-notification-alerts';
+import { useChatUnreadCount } from '@/hooks/use-chat';
 import { subscribeAudienceSync } from '@/lib/audience-sync-bus';
 import { ROLE_LABELS } from '@/types';
 
@@ -53,6 +55,7 @@ function isWaitingRoomPath(pathname: string) {
   return (
     pathname === '/audiences' ||
     pathname === '/audiences/new' ||
+    pathname === '/messages' ||
     pathname === '/profile'
   );
 }
@@ -70,7 +73,6 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/calendar', label: 'Agenda', icon: Calendar, menuPermission: 'MENU_CALENDAR' },
   { href: '/visitors', label: 'Visiteurs', icon: Users, menuPermission: 'MENU_VISITORS' },
   { href: '/reports', label: 'Rapports', icon: FileText, menuPermission: 'MENU_REPORTS' },
-  { href: '/notifications', label: 'Notifications', icon: Bell, menuPermission: 'MENU_NOTIFICATIONS' },
   { href: '/settings', label: 'Paramètres', icon: Settings, menuPermission: 'MENU_SETTINGS' },
   { href: '/audit', label: 'Audit', icon: Shield, menuPermission: 'MENU_AUDIT' },
 ];
@@ -267,11 +269,14 @@ function SidebarRail({ items, activePath, homeHref }: { items: NavItem[]; active
 function TopBar({
   onOpenOrbital,
   unreadNotifications,
+  unreadMessages,
 }: {
   onOpenOrbital: () => void;
   unreadNotifications: number;
+  unreadMessages: number;
 }) {
-  const { user, logout } = useAuthStore();
+  const { user, logout, permissions } = useAuthStore();
+  const canUseChat = canAccessMenu('MENU_CHAT', user?.role, permissions);
 
   return (
     <header className="sticky top-0 z-20 h-20 glass-strong border-b border-military-800/30 flex items-center justify-between px-6 lg:px-10 shrink-0">
@@ -295,16 +300,19 @@ function TopBar({
       </div>
 
       <div className="flex items-center gap-6">
-        <div className="hidden xl:flex items-center gap-8 mr-8">
-          <div className="flex flex-col items-end">
-            <span className="text-[9px] font-mono text-military-500 uppercase tracking-widest">System Time</span>
-            <span className="text-xs font-mono text-cream/60">12:44:32 UTC</span>
-          </div>
-          <div className="flex flex-col items-end">
-            <span className="text-[9px] font-mono text-military-500 uppercase tracking-widest">Network</span>
-            <span className="text-xs font-mono text-military-400">ENCRYPTED</span>
-          </div>
-        </div>
+        {canUseChat ? (
+          <Link
+            href="/messages"
+            className="relative w-11 h-11 rounded-2xl glass flex items-center justify-center hover:glow-green transition-all border border-military-800/50 group"
+          >
+            <MessageSquare className="w-5 h-5 text-cream/40 group-hover:text-military-400 transition-colors" />
+            {unreadMessages > 0 ? (
+              <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1 rounded-lg bg-military-600 text-[10px] flex items-center justify-center font-bold border-2 border-carbon-950">
+                {unreadMessages > 99 ? '99+' : unreadMessages}
+              </span>
+            ) : null}
+          </Link>
+        ) : null}
 
         <Link
           href="/notifications"
@@ -420,6 +428,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     userRole: user?.role,
     pollIntervalMs: isWaitingRoomRole(user?.role) ? 5000 : 30000,
   });
+  const { unreadCount: unreadMessages } = useChatUnreadCount(accessToken);
 
   useEffect(() => setMounted(true), []);
 
@@ -517,7 +526,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {isAuthenticated && <SidebarRail items={items} activePath={pathname} homeHref={homeHref} />}
 
       <div className={cn('flex-1 flex flex-col min-h-0 min-w-0', isAuthenticated && 'lg:ml-[80px]')}>
-        {isAuthenticated && <TopBar onOpenOrbital={() => setOrbitalOpen(true)} unreadNotifications={unreadNotifications} />}
+        {isAuthenticated && (
+          <TopBar
+            onOpenOrbital={() => setOrbitalOpen(true)}
+            unreadNotifications={unreadNotifications}
+            unreadMessages={unreadMessages}
+          />
+        )}
 
         <main className={cn('flex-1 min-h-0 overflow-y-auto', isAuthenticated && 'pb-28')}>
           {children}

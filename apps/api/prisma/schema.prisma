@@ -103,6 +103,8 @@ model User {
   notifications    Notification[]
   auditLogs        AuditLog[]
   refreshTokens    RefreshToken[]
+  chatParticipants ConversationParticipant[]
+  chatMessages     ChatMessage[]
   cabinetId        String?
   bureauId         String?
   cabinet          Cabinet?           @relation(fields: [cabinetId], references: [id])
@@ -338,4 +340,50 @@ model SystemSetting {
   updatedAt DateTime @updatedAt
 
   @@map("system_settings")
+}
+
+enum ConversationType {
+  DIRECT
+}
+
+model Conversation {
+  id        String           @id @default(cuid())
+  type      ConversationType @default(DIRECT)
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  participants ConversationParticipant[]
+  messages     ChatMessage[]
+
+  @@map("conversations")
+}
+
+model ConversationParticipant {
+  id             String    @id @default(cuid())
+  conversationId String
+  userId         String
+  lastReadAt     DateTime?
+  joinedAt       DateTime  @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, userId])
+  @@index([userId])
+  @@map("conversation_participants")
+}
+
+model ChatMessage {
+  id             String   @id @default(cuid())
+  conversationId String
+  senderId       String
+  content        String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender       User         @relation(fields: [senderId], references: [id])
+
+  @@index([conversationId, createdAt])
+  @@map("chat_messages")
 }

@@ -10,8 +10,8 @@ import { checkApiHealth } from '@/lib/api-config';
 import { cn } from '@/lib/utils';
 
 export default function LoginPage() {
-  const [email, setEmail] = useState('admin@audax.fardc.cd');
-  const [password, setPassword] = useState('Audax2026!');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [totpCode, setTotpCode] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
@@ -133,6 +133,8 @@ export default function LoginPage() {
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
+                    placeholder="fardc@.cd"
+                    autoComplete="username"
                     className="w-full h-11 px-4 rounded-xl bg-carbon-900/50 border border-military-800/50 text-cream focus:outline-none focus:border-military-500 focus:glow-green transition-all font-mono text-sm"
                     required
                   />
@@ -144,6 +146,7 @@ export default function LoginPage() {
                       type={showPassword ? 'text' : 'password'}
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
+                      autoComplete="current-password"
                       className="w-full h-11 px-4 pr-11 rounded-xl bg-carbon-900/50 border border-military-800/50 text-cream focus:outline-none focus:border-military-500 focus:glow-green transition-all font-mono text-sm"
                       required
                     />

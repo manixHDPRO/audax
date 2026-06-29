@@ -745,3 +745,75 @@ export async function markAllNotificationsReadApi(token: string) {
     token,
   });
 }
+
+export interface ChatUserPreview {
+  id: string;
+  firstName: string;
+  lastName: string;
+  role: string;
+  email: string;
+}
+
+export interface ChatMessageRecord {
+  id: string;
+  conversationId: string;
+  content: string;
+  createdAt: string;
+  sender: ChatUserPreview;
+}
+
+export interface ChatConversationSummary {
+  id: string;
+  type: string;
+  updatedAt: string;
+  participants: ChatUserPreview[];
+  lastMessage: ChatMessageRecord | null;
+  unreadCount: number;
+}
+
+export interface ChatConversationDetail {
+  id: string;
+  type: string;
+  participants: ChatUserPreview[];
+}
+
+export async function listChatContactsApi(token: string) {
+  return apiFetch<ChatUserPreview[]>('/chat/contacts', { token });
+}
+
+export async function listChatConversationsApi(token: string) {
+  return apiFetch<ChatConversationSummary[]>('/chat/conversations', { token });
+}
+
+export async function getChatUnreadCountApi(token: string) {
+  return apiFetch<{ count: number }>('/chat/unread-count', { token });
+}
+
+export async function createChatConversationApi(token: string, recipientId: string) {
+  return apiFetch<ChatConversationDetail>('/chat/conversations', {
+    method: 'POST',
+    token,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ recipientId }),
+  });
+}
+
+export async function listChatMessagesApi(token: string, conversationId: string) {
+  return apiFetch<ChatMessageRecord[]>(`/chat/conversations/${conversationId}/messages`, { token });
+}
+
+export async function sendChatMessageApi(token: string, conversationId: string, content: string) {
+  return apiFetch<ChatMessageRecord>(`/chat/conversations/${conversationId}/messages`, {
+    method: 'POST',
+    token,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content }),
+  });
+}
+
+export async function markChatConversationReadApi(token: string, conversationId: string) {
+  return apiFetch<{ ok: boolean }>(`/chat/conversations/${conversationId}/read`, {
+    method: 'PATCH',
+    token,
+  });
+}

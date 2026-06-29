@@ -12,6 +12,7 @@ export const PERMISSION_LABELS: Record<string, string> = {
   MENU_VISITORS: 'Menu — Visiteurs',
   MENU_REPORTS: 'Menu — Rapports',
   MENU_NOTIFICATIONS: 'Menu — Notifications',
+  MENU_CHAT: 'Menu — Messagerie',
   MENU_SETTINGS: 'Menu — Paramètres',
   MENU_AUDIT: 'Menu — Audit',
   CREATE_AUDIENCE: 'Créer une audience',
@@ -44,6 +45,7 @@ export const MENU_PERMISSION_KEYS = [
   'MENU_VISITORS',
   'MENU_REPORTS',
   'MENU_NOTIFICATIONS',
+  'MENU_CHAT',
   'MENU_SETTINGS',
   'MENU_AUDIT',
 ] as const;

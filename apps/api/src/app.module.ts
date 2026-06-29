@@ -14,6 +14,7 @@ import { AuditModule } from './modules/audit/audit.module';
 import { CalendarModule } from './modules/calendar/calendar.module';
 import { RolesModule } from './modules/roles/roles.module';
 import { OrgUnitsModule } from './modules/org-units/org-units.module';
+import { ChatModule } from './modules/chat/chat.module';
 import { HealthController } from './health.controller';
 
 @Module({
@@ -41,6 +42,7 @@ import { HealthController } from './health.controller';
     CalendarModule,
     RolesModule,
     OrgUnitsModule,
+    ChatModule,
   ],
 })
 export class AppModule {}
