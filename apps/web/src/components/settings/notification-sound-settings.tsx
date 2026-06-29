@@ -38,6 +38,7 @@ export function NotificationSoundSettings() {
   };
 
   const handleTest = (type: Notification['type']) => {
+    if (!user?.role) return;
     unlockNotificationAudio();
     playNotificationSound(type, preferences, user.role);
   };
