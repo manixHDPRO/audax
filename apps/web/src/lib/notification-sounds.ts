@@ -354,6 +354,7 @@ function playRolePatternOnce(
       }
       break;
 
+    case 'SUPER_ADMIN':
     case 'ADMIN':
       switch (type) {
         case 'INFO':
