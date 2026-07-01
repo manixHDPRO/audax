@@ -7,6 +7,7 @@ import {
 import { ConversationType, Prisma, UserRole } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ChatStreamService } from './chat-stream.service';
+import { hiddenSuperAdminUserFilter, isPlatformAdmin } from '../../common/super-admin-access';
 
 const userPreviewSelect = {
   id: true,
@@ -44,14 +45,18 @@ export class ChatService {
     }
 
     const target = await this.prisma.user.findFirst({
-      where: { id: targetUserId, isActive: true },
+      where: {
+        id: targetUserId,
+        isActive: true,
+        ...hiddenSuperAdminUserFilter(user.role),
+      },
       select: { id: true, cabinetId: true, bureauId: true },
     });
     if (!target) {
       throw new NotFoundException('Utilisateur introuvable');
     }
 
-    if (user.role === UserRole.ADMIN) return target;
+    if (isPlatformAdmin(user.role)) return target;
 
     if (user.cabinetId && target.cabinetId && user.cabinetId === target.cabinetId) {
       return target;
@@ -71,9 +76,10 @@ export class ChatService {
     const where: Prisma.UserWhereInput = {
       isActive: true,
       id: { not: user.id },
+      ...hiddenSuperAdminUserFilter(user.role),
     };
 
-    if (user.role !== UserRole.ADMIN && user.cabinetId) {
+    if (!isPlatformAdmin(user.role) && user.cabinetId) {
       where.cabinetId = user.cabinetId;
     }
 

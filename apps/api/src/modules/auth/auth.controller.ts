@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Req, HttpCode, Get, Patch, UseGuards } from '@nestjs/common';
+import { Controller, Post, Body, Req, HttpCode, Get, Patch, UseGuards, Query } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { Request } from 'express';
@@ -6,6 +6,7 @@ import { AuthService } from './auth.service';
 import { TwoFactorService } from './two-factor.service';
 import { LoginDto, RefreshDto, Verify2FADto, Enable2FADto, Disable2FADto } from './dto/login.dto';
 import { ChangePasswordDto } from './dto/profile.dto';
+import { SetPasswordDto } from './dto/set-password.dto';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
 @ApiTags('auth')
@@ -83,5 +84,18 @@ export class AuthController {
   @ApiOperation({ summary: 'Changer son mot de passe' })
   changePassword(@CurrentUser('sub') userId: string, @Body() dto: ChangePasswordDto) {
     return this.authService.changePassword(userId, dto);
+  }
+
+  @Get('password-token/validate')
+  @ApiOperation({ summary: 'Vérifier un lien de définition de mot de passe' })
+  validatePasswordToken(@Query('token') token: string) {
+    return this.authService.validatePasswordToken(token);
+  }
+
+  @Post('set-password')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Définir le mot de passe via un lien reçu par e-mail' })
+  setPassword(@Body() dto: SetPasswordDto) {
+    return this.authService.setPassword(dto);
   }
 }

@@ -8,7 +8,7 @@ export interface NotificationSoundPreferences {
   byType: Record<NotificationSoundType, boolean>;
 }
 
-/** Volume utilisateur à 100 % × amplification forte (réglable via le curseur). */
+/** Amplification appliquée au volume choisi par l'utilisateur (0–100 %). */
 const ATTENTION_GAIN_BOOST = 2.8;
 
 export const DEFAULT_NOTIFICATION_SOUND_PREFERENCES: NotificationSoundPreferences = {
@@ -31,6 +31,7 @@ export const NOTIFICATION_SOUND_LABELS: Record<NotificationSoundType, string> = 
 
 /** Description du timbre propre à chaque rôle. */
 export const ROLE_SOUND_DESCRIPTIONS: Record<UserRole, string> = {
+  SUPER_ADMIN: 'Signal discret — Super administration',
   PROTOCOL: 'Triple staccato radio — signal Protocol',
   CEMG: 'Fanfare grave — signal Chef EMG',
   CHEF: 'Carillon mesuré — signal Chef de Cabinet',
@@ -77,7 +78,8 @@ function getMasterGain(ctx: AudioContext): GainNode {
 }
 
 function resolvePeakGain(userVolume: number, scale = 1): number {
-  return Math.min(Math.max(userVolume, 0.35), 1) * ATTENTION_GAIN_BOOST * scale;
+  const clamped = Math.min(Math.max(userVolume, 0), 1);
+  return clamped * ATTENTION_GAIN_BOOST * scale;
 }
 
 function playBeep(
@@ -478,18 +480,15 @@ export function readNotificationSoundPreferences(userId: string): NotificationSo
     const raw = window.localStorage.getItem(preferencesStorageKey(userId));
     if (!raw) return DEFAULT_NOTIFICATION_SOUND_PREFERENCES;
     const parsed = JSON.parse(raw) as Partial<NotificationSoundPreferences>;
-    const merged = {
+    return {
       ...DEFAULT_NOTIFICATION_SOUND_PREFERENCES,
       ...parsed,
+      volume: Math.min(Math.max(parsed.volume ?? 1, 0), 1),
       byType: {
         ...DEFAULT_NOTIFICATION_SOUND_PREFERENCES.byType,
         ...parsed.byType,
       },
     };
-    if (merged.volume < 0.85) {
-      merged.volume = 1;
-    }
-    return merged;
   } catch {
     return DEFAULT_NOTIFICATION_SOUND_PREFERENCES;
   }

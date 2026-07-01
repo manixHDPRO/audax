@@ -1,4 +1,4 @@
-export type UserRole = 'ADMIN' | 'CHEF' | 'SECRETAIRE' | 'PROTOCOL' | 'CEMG' | 'SALLE_ATTENTE' | 'OBSERVATEUR' | 'ASSISTANT';
+export type UserRole = 'SUPER_ADMIN' | 'ADMIN' | 'CHEF' | 'SECRETAIRE' | 'PROTOCOL' | 'CEMG' | 'SALLE_ATTENTE' | 'OBSERVATEUR' | 'ASSISTANT';
 
 export type AudienceStatus =
   | 'EN_ATTENTE'
@@ -185,6 +185,7 @@ export const CONFIDENTIALITY_LABELS: Record<Confidentiality, string> = {
 };
 
 export const ROLE_LABELS: Record<UserRole, string> = {
+  SUPER_ADMIN: 'Super administrateur',
   ADMIN: 'Administrateur',
   CHEF: 'Chef de cabinet',
   SECRETAIRE: 'Secrétaire',

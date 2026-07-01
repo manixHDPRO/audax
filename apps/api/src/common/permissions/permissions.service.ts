@@ -34,6 +34,8 @@ export class PermissionsService {
   }
 
   async hasPermission(role: UserRole, permission: PermissionKey): Promise<boolean> {
+    if (role === UserRole.SUPER_ADMIN) return true;
+
     const matrix = await this.getMatrix();
     const allowed = matrix[permission];
     if (!allowed) return false;

@@ -2,7 +2,7 @@ import { Controller, Get, Post, Patch, Delete, Param, Body, Query, UseGuards } f
 import { AuthGuard } from '@nestjs/passport';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { AudiencesService } from './audiences.service';
-import { CreateAudienceDto, UpdateAudienceDto, ValidateAudienceDto, CompleteReceptionDto, CompleteAccompanimentDto, CloseAudienceDto } from './dto/audience.dto';
+import { CreateAudienceDto, UpdateAudienceDto, ValidateAudienceDto, CompleteReceptionDto, CompleteAccompanimentDto, CloseAudienceDto, UpdateRequesterGradeDto } from './dto/audience.dto';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { RequirePermission } from '../../common/decorators/permissions.decorator';
 import { CurrentUser, JwtPayload } from '../../common/decorators/current-user.decorator';
@@ -131,6 +131,21 @@ export class AudiencesController {
     @CurrentUser() user: JwtPayload,
   ) {
     return this.audiencesService.update(id, dto, {
+      id: user.sub,
+      role: user.role as UserRole,
+      cabinetId: user.cabinetId,
+      bureauId: user.bureauId,
+    });
+  }
+
+  @Patch(':id/requester-grade')
+  @RequirePermission('DELETE_AUDIENCE')
+  updateRequesterGrade(
+    @Param('id') id: string,
+    @Body() dto: UpdateRequesterGradeDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.audiencesService.updateRequesterGrade(id, dto.requesterGrade, {
       id: user.sub,
       role: user.role as UserRole,
       cabinetId: user.cabinetId,

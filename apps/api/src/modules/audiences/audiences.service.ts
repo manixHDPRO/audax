@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { AudienceStatus, Priority, Prisma, UserRole, ValidationDecision } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateAudienceDto, UpdateAudienceDto, ValidateAudienceDto } from './dto/audience.dto';
@@ -28,6 +28,7 @@ import {
   NotificationStreamService,
   NotificationSoundType,
 } from '../notifications/notification-stream.service';
+import { hiddenSuperAdminUserFilter, isPlatformAdmin } from '../../common/super-admin-access';
 
 const visitTargetListSelect = {
   id: true,
@@ -45,7 +46,7 @@ function adminOrgUnitFilter(
   cabinetId?: string,
   bureauId?: string,
 ): Prisma.AudienceWhereInput {
-  if (user.role !== UserRole.ADMIN) return {};
+  if (!isPlatformAdmin(user.role)) return {};
   const visitTarget: Prisma.UserWhereInput = {};
   if (cabinetId) visitTarget.cabinetId = cabinetId;
   if (bureauId) visitTarget.bureauId = bureauId;
@@ -143,10 +144,12 @@ export class AudiencesService {
   async findVisitTargets(user: UserContext) {
     const { role, cabinetId, bureauId } = user;
 
-    const where: any = { isActive: true };
+    const where: Prisma.UserWhereInput = {
+      isActive: true,
+      ...hiddenSuperAdminUserFilter(role),
+    };
 
-    // Les admins et la salle d'attente voient tout le monde
-    if (role !== UserRole.ADMIN && role !== UserRole.SALLE_ATTENTE) {
+    if (!isPlatformAdmin(role) && role !== UserRole.SALLE_ATTENTE) {
       where.OR = [
         ...(cabinetId ? [{ cabinetId }] : []),
         ...(bureauId ? [{ bureauId }] : []),
@@ -361,6 +364,7 @@ export class AudiencesService {
         motive: dto.motive,
         requesterName: dto.requesterName,
         requesterOrg: dto.requesterOrg,
+        requesterGrade: dto.requesterGrade?.trim() || null,
         priority: dto.priority,
         confidentiality: dto.confidentiality,
         category: dto.category,
@@ -382,7 +386,7 @@ export class AudiencesService {
       include: { visitors: { include: { visitor: true } } },
     });
 
-    const { criticalRecipientIds, chefRecipientIds, protocolRecipientIds } =
+    const { chefRecipientIds, protocolRecipientIds } =
       await notifyAudienceCreated(this.prisma, {
       id: audience.id,
       reference,
@@ -393,20 +397,14 @@ export class AudiencesService {
     });
 
     this.pushLiveAlerts(protocolRecipientIds, {
-      type: 'INFO',
-      title: 'Nouvelle demande d\'audience',
+      type: dto.priority === 'PRIORITE_0' ? 'CRITICAL' : 'INFO',
+      title: dto.priority === 'PRIORITE_0' ? 'Audience Priorité 0' : 'Nouvelle demande d\'audience',
       message: `${reference} — ${dto.subject}`,
       audienceId: audience.id,
     });
     this.pushLiveAlerts(chefRecipientIds, {
       type: 'WARNING',
       title: 'Nouvelle demande d\'audience',
-      message: `${reference} — ${dto.subject}`,
-      audienceId: audience.id,
-    });
-    this.pushLiveAlerts(criticalRecipientIds, {
-      type: 'CRITICAL',
-      title: 'Audience Priorité 0',
       message: `${reference} — ${dto.subject}`,
       audienceId: audience.id,
     });
@@ -459,6 +457,23 @@ export class AudiencesService {
     }
 
     return audience;
+  }
+
+  async updateRequesterGrade(id: string, requesterGrade: string | undefined, user: UserContext) {
+    if (!isPlatformAdmin(user.role)) {
+      throw new ForbiddenException('Seul un administrateur peut modifier le grade du demandeur');
+    }
+
+    await this.findOne(id, user);
+
+    const normalized = requesterGrade?.trim() || null;
+
+    await this.prisma.audience.update({
+      where: { id },
+      data: { requesterGrade: normalized },
+    });
+
+    return this.findOne(id, user);
   }
 
   async forwardToDircab(id: string, user: UserContext) {
@@ -588,7 +603,7 @@ export class AudiencesService {
         audience.status === AudienceStatus.TRANSMIS_DIRCAB) &&
         user.role !== UserRole.CEMG &&
         user.role !== UserRole.CHEF &&
-        user.role !== UserRole.ADMIN) {
+        !isPlatformAdmin(user.role)) {
       throw new BadRequestException('Audience déjà envoyée au Dircab — accès restreint');
     }
 
@@ -680,7 +695,7 @@ export class AudiencesService {
       user.role !== UserRole.CHEF &&
       user.role !== UserRole.PROTOCOL &&
       user.role !== UserRole.CEMG &&
-      user.role !== UserRole.ADMIN
+      !isPlatformAdmin(user.role)
     ) {
       throw new BadRequestException('Accès refusé pour clôturer cette audience');
     }
@@ -743,7 +758,7 @@ export class AudiencesService {
     if (!audience) throw new NotFoundException('Audience introuvable');
 
     // Seul le Protocol ou l'Admin peut confirmer
-    if (role !== UserRole.PROTOCOL && role !== UserRole.ADMIN) {
+    if (role !== UserRole.PROTOCOL && !isPlatformAdmin(role)) {
       throw new BadRequestException('Seul le Protocol peut confirmer cette audience');
     }
 
@@ -914,7 +929,7 @@ export class AudiencesService {
       where.statusHistory = {
         some: { comment: { startsWith: 'Accompagné au bureau' } },
       };
-    } else if (user.role === UserRole.PROTOCOL || user.role === UserRole.ADMIN) {
+    } else if (user.role === UserRole.PROTOCOL || isPlatformAdmin(user.role)) {
       where.visitTarget = { role: UserRole.CEMG };
       where.statusHistory = {
         some: { comment: { startsWith: 'Accompagné au bureau' } },
@@ -982,7 +997,7 @@ export class AudiencesService {
           'La réception des audiences CEMG (circuit Protocol) est réservée au Protocol',
         );
       }
-    } else if (role === UserRole.PROTOCOL || role === UserRole.ADMIN) {
+    } else if (role === UserRole.PROTOCOL || isPlatformAdmin(role)) {
       if (!isCemgRelatedAudience(audience)) {
         throw new BadRequestException(
           'La réception hors circuit CEMG est réservée à la salle d\'attente',

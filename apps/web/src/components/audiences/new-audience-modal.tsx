@@ -17,6 +17,8 @@ import { useAuthStore, isWaitingRoomRole } from '@/stores/auth-store';
 import { createAudienceApi, listVisitTargetsApi, searchRequestersFromAudiencesApi, checkDuplicateTodayApi, type RequesterSearchResult, type DuplicateTodayResult } from '@/lib/api-client';
 import { notifyAudienceSync, buildCreateAudienceAlertSync } from '@/lib/audience-sync-bus';
 import { formatAccompaniedPerson } from '@/lib/audience-utils';
+import { extractGradeFromMotive } from '@/lib/military-grades';
+import { useMilitaryGrades } from '@/hooks/use-military-grades';
 import type { Audience, Priority, Confidentiality, VisitMode, AccompaniedPerson, UserRole } from '@/types';
 import { ROLE_LABELS } from '@/types';
 
@@ -26,25 +28,6 @@ const CATEGORIES = [
   { value: 'CIVIL', label: 'Civil' },
   { value: 'INSTITUTIONNEL', label: 'Institutionnel' },
   { value: 'AUTRE', label: 'Autre' },
-];
-
-const MILITARY_GRADES = [
-  'Général d\'armée',
-  'Général de corps d\'armée',
-  'Général de division',
-  'Général de brigade',
-  'Colonel',
-  'Lieutenant-colonel',
-  'Commandant',
-  'Capitaine',
-  'Lieutenant',
-  'Sous-lieutenant',
-  'Adjudant-chef',
-  'Adjudant',
-  'Sergent-chef',
-  'Sergent',
-  'Caporal',
-  'Soldat de 1ère classe',
 ];
 
 const emptyAccompanied = (): AccompaniedPerson => ({ name: '', grade: '' });
@@ -62,13 +45,6 @@ const sectionTitleClass = 'text-[11px] font-semibold uppercase tracking-wider te
 const rowInputClass =
   'h-8 px-2.5 rounded-lg bg-carbon-800 border border-carbon-600 text-xs text-cream focus:outline-none focus:border-military-500';
 
-function extractGradeFromMotive(motive: string): string | undefined {
-  for (const grade of MILITARY_GRADES) {
-    if (motive.includes(grade)) return grade;
-  }
-  return undefined;
-}
-
 interface NewAudienceModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -78,6 +54,7 @@ export function NewAudienceModal({ open, onOpenChange }: NewAudienceModalProps) 
   const router = useRouter();
   const insertAudience = useAudiencesStore((s) => s.insertAudience);
   const { accessToken, user } = useAuthStore();
+  const { labels: militaryGradeLabels } = useMilitaryGrades(accessToken);
   const isWaitingRoom = isWaitingRoomRole(user?.role);
 
   const [category, setCategory] = useState('MILITAIRE');
@@ -192,7 +169,7 @@ export function NewAudienceModal({ open, onOpenChange }: NewAudienceModalProps) 
     setRequesterFunction(fonction);
     if (cat) setCategory(cat);
     if (cat === 'MILITAIRE' && motive) {
-      const grade = extractGradeFromMotive(motive);
+      const grade = extractGradeFromMotive(motive, militaryGradeLabels);
       if (grade) setGradeValue(grade);
     }
     setShowSearchResults(false);
@@ -322,6 +299,7 @@ export function NewAudienceModal({ open, onOpenChange }: NewAudienceModalProps) 
         motive: payload.motive,
         requesterName: payload.requesterName,
         requesterOrg: payload.requesterOrg,
+        requesterGrade: payload.grade,
         category: payload.category,
         priority: payload.priority,
         confidentiality: payload.confidentiality,
@@ -354,7 +332,7 @@ export function NewAudienceModal({ open, onOpenChange }: NewAudienceModalProps) 
           priority: createdApi.priority as Priority,
           confidentiality: createdApi.confidentiality as Confidentiality,
           category: createdApi.category,
-          grade: payload.grade,
+          grade: createdApi.requesterGrade ?? payload.grade,
           visitMode: payload.visitMode,
           visitorFunction: payload.visitorFunction,
           accompaniedPersons: payload.accompaniedPersons,
@@ -451,7 +429,7 @@ export function NewAudienceModal({ open, onOpenChange }: NewAudienceModalProps) 
                         className={inputClass}
                       >
                         <option value="" disabled>Sélectionner un grade</option>
-                        {MILITARY_GRADES.map((g) => (
+                        {militaryGradeLabels.map((g) => (
                           <option key={g} value={g}>{g}</option>
                         ))}
                       </select>
@@ -646,7 +624,7 @@ export function NewAudienceModal({ open, onOpenChange }: NewAudienceModalProps) 
                             aria-label={`Grade personne ${index + 1}`}
                           >
                             <option value="" disabled>Grade</option>
-                            {MILITARY_GRADES.map((g) => (
+                            {militaryGradeLabels.map((g) => (
                               <option key={g} value={g}>{g}</option>
                             ))}
                           </select>

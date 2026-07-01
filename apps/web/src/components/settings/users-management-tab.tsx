@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { UserFormModal } from '@/components/users/user-form-modal';
-import { ResetPasswordModal } from '@/components/users/reset-password-modal';
+import { SendPasswordLinkModal } from '@/components/users/send-password-link-modal';
 import { useAuthStore } from '@/stores/auth-store';
 import { API_UNAVAILABLE_MESSAGE } from '@/lib/api-config';
 import { ROLE_LABELS } from '@/types';
@@ -13,7 +13,7 @@ import {
   createUserApi,
   updateUserApi,
   toggleUserActiveApi,
-  resetUserPasswordApi,
+  sendUserPasswordLinkApi,
   type UserListItem,
   type CreateUserPayload,
   type UpdateUserPayload,
@@ -36,11 +36,12 @@ export function UsersManagementTab() {
   const [users, setUsers] = useState<UserListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
 
   const [formOpen, setFormOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<UserListItem | null>(null);
-  const [resetOpen, setResetOpen] = useState(false);
-  const [resetUser, setResetUser] = useState<UserListItem | null>(null);
+  const [linkOpen, setLinkOpen] = useState(false);
+  const [linkUser, setLinkUser] = useState<UserListItem | null>(null);
 
   const loadUsers = useCallback(async () => {
     if (!accessToken) return;
@@ -67,6 +68,7 @@ export function UsersManagementTab() {
     if (!accessToken) throw new Error('Session expirée');
     const created = await createUserApi(accessToken, data as CreateUserPayload);
     setUsers((prev) => [...prev, created]);
+    setSuccess(`Invitation envoyée à ${created.email}`);
   }
 
   async function handleUpdate(data: CreateUserPayload | UpdateUserPayload) {
@@ -85,9 +87,9 @@ export function UsersManagementTab() {
     }
   }
 
-  async function handleResetPassword(password: string) {
-    if (!resetUser || !accessToken) throw new Error('Session expirée');
-    await resetUserPasswordApi(accessToken, resetUser.id, password);
+  async function handleSendPasswordLink() {
+    if (!linkUser || !accessToken) throw new Error('Session expirée');
+    await sendUserPasswordLinkApi(accessToken, linkUser.id);
   }
 
   const activeCount = users.filter((u) => u.isActive).length;
@@ -114,6 +116,12 @@ export function UsersManagementTab() {
       {error && (
         <div className="rounded-lg border border-red-800/50 bg-red-900/20 px-4 py-3 text-sm text-red-400">
           {error}
+        </div>
+      )}
+
+      {success && (
+        <div className="rounded-lg border border-green-800/50 bg-green-900/20 px-4 py-3 text-sm text-green-400">
+          {success}
         </div>
       )}
 
@@ -175,7 +183,7 @@ export function UsersManagementTab() {
                     <Button variant="ghost" size="sm" title="Modifier" onClick={() => { setEditingUser(u); setFormOpen(true); }}>
                       <Pencil className="w-3.5 h-3.5" />
                     </Button>
-                    <Button variant="ghost" size="sm" title="Réinitialiser le mot de passe" onClick={() => { setResetUser(u); setResetOpen(true); }}>
+                    <Button variant="ghost" size="sm" title="Envoyer un lien mot de passe" onClick={() => { setLinkUser(u); setLinkOpen(true); }}>
                       <KeyRound className="w-3.5 h-3.5" />
                     </Button>
                     {u.id !== user?.id && (
@@ -192,7 +200,13 @@ export function UsersManagementTab() {
       )}
 
       <UserFormModal open={formOpen} onOpenChange={setFormOpen} user={editingUser} onSubmit={editingUser ? handleUpdate : handleCreate} />
-      <ResetPasswordModal open={resetOpen} onOpenChange={setResetOpen} userName={resetUser ? `${resetUser.firstName} ${resetUser.lastName}` : ''} onSubmit={handleResetPassword} />
+      <SendPasswordLinkModal
+        open={linkOpen}
+        onOpenChange={setLinkOpen}
+        userName={linkUser ? `${linkUser.firstName} ${linkUser.lastName}` : ''}
+        userEmail={linkUser?.email ?? ''}
+        onSubmit={handleSendPasswordLink}
+      />
     </div>
   );
 }

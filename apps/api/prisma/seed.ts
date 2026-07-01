@@ -23,11 +23,24 @@ async function main() {
 
   const users = await Promise.all([
     prisma.user.upsert({
+      where: { email: 'superadmin@audax.fardc.cd' },
+      update: { role: UserRole.SUPER_ADMIN },
+      create: {
+        email: 'superadmin@audax.fardc.cd',
+        passwordHash,
+        passwordSetAt: new Date(),
+        firstName: 'Super',
+        lastName: 'Administrateur',
+        role: UserRole.SUPER_ADMIN,
+      },
+    }),
+    prisma.user.upsert({
       where: { email: 'admin@audax.fardc.cd' },
       update: {},
       create: {
         email: 'admin@audax.fardc.cd',
         passwordHash,
+        passwordSetAt: new Date(),
         firstName: 'Jean',
         lastName: 'Mukendi',
         role: UserRole.ADMIN,
@@ -39,6 +52,7 @@ async function main() {
       create: {
         email: 'chef@audax.fardc.cd',
         passwordHash,
+        passwordSetAt: new Date(),
         firstName: 'Général',
         lastName: 'Kabongo',
         role: UserRole.CHEF,
@@ -51,6 +65,7 @@ async function main() {
       create: {
         email: 'cemg@audax.fardc.cd',
         passwordHash,
+        passwordSetAt: new Date(),
         firstName: 'Chef',
         lastName: 'EMG',
         role: UserRole.CEMG,
@@ -63,6 +78,7 @@ async function main() {
       create: {
         email: 'secretaire@audax.fardc.cd',
         passwordHash,
+        passwordSetAt: new Date(),
         firstName: 'Marie',
         lastName: 'Tshisekedi',
         role: UserRole.SECRETAIRE,
@@ -75,6 +91,7 @@ async function main() {
       create: {
         email: 'officier@audax.fardc.cd',
         passwordHash,
+        passwordSetAt: new Date(),
         firstName: 'Capitaine',
         lastName: 'Lubala',
         role: UserRole.PROTOCOL,
@@ -87,6 +104,7 @@ async function main() {
       create: {
         email: 'salle@audax.fardc.cd',
         passwordHash,
+        passwordSetAt: new Date(),
         firstName: 'Agent',
         lastName: 'Accueil',
         role: UserRole.SALLE_ATTENTE,
@@ -191,7 +209,7 @@ async function main() {
     });
   }
 
-  console.log('✅ Seed terminé — Comptes: admin@audax.fardc.cd / salle@audax.fardc.cd — Mot de passe: Audax2026!');
+  console.log('✅ Seed terminé — Super admin: superadmin@audax.fardc.cd — Admin: admin@audax.fardc.cd — Mot de passe: Audax2026!');
 }
 
 main()

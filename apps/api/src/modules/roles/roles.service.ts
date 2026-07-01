@@ -5,6 +5,7 @@ import { PERMISSIONS } from '../../common/permissions';
 import { PERMISSION_LABELS, PERMISSION_GROUPS, ROLE_DESCRIPTIONS } from '../../common/permission-labels';
 import { PermissionsService } from '../../common/permissions/permissions.service';
 import { SYSTEM_ROLE_ORDER } from '../../common/role-order';
+import { isSuperAdminRole } from '../../common/super-admin-access';
 import { CreateCustomRoleDto, UpdateCustomRoleDto, UpdateRoleMatrixDto, UpdateSystemRoleDto } from './dto/role.dto';
 
 const CUSTOM_ROLES_KEY = 'custom_roles';
@@ -27,7 +28,7 @@ export class RolesService {
     private permissionsService: PermissionsService,
   ) {}
 
-  async getMatrix() {
+  async getMatrix(callerRole: UserRole) {
     const [matrix, customRolesSetting, roleLabels, roleDescriptions] = await Promise.all([
       this.permissionsService.getMatrix(),
       this.prisma.systemSetting.findUnique({ where: { key: CUSTOM_ROLES_KEY } }),
@@ -39,7 +40,7 @@ export class RolesService {
       ? JSON.parse(customRolesSetting.value)
       : [];
 
-    return {
+    const payload = {
       systemRoles: SYSTEM_ROLE_ORDER,
       permissionKeys: this.permissionsService.getPermissionKeys(),
       permissionLabels: PERMISSION_LABELS,
@@ -49,13 +50,19 @@ export class RolesService {
       matrix,
       customRoles,
     };
+
+    return this.filterMatrixForCaller(payload, callerRole);
   }
 
-  async updateMatrix(dto: UpdateRoleMatrixDto, adminId: string) {
+  async updateMatrix(dto: UpdateRoleMatrixDto, adminId: string, callerRole: UserRole) {
+    const permissions = isSuperAdminRole(callerRole)
+      ? dto.permissions
+      : this.stripSuperAdminFromMatrix(dto.permissions);
+
     const validKeys = new Set(Object.keys(PERMISSIONS));
     const validRoles = new Set(Object.values(UserRole));
 
-    for (const [key, roles] of Object.entries(dto.permissions)) {
+    for (const [key, roles] of Object.entries(permissions)) {
       if (!validKeys.has(key)) {
         throw new BadRequestException(`Permission inconnue : ${key}`);
       }
@@ -68,8 +75,8 @@ export class RolesService {
 
     await this.prisma.systemSetting.upsert({
       where: { key: 'role_permissions' },
-      create: { key: 'role_permissions', value: JSON.stringify(dto.permissions) },
-      update: { value: JSON.stringify(dto.permissions) },
+      create: { key: 'role_permissions', value: JSON.stringify(permissions) },
+      update: { value: JSON.stringify(permissions) },
     });
 
     this.permissionsService.invalidateCache();
@@ -83,7 +90,7 @@ export class RolesService {
       },
     });
 
-    return this.getMatrix();
+    return this.getMatrix(callerRole);
   }
 
   async createCustomRole(dto: CreateCustomRoleDto, adminId: string) {
@@ -183,10 +190,13 @@ export class RolesService {
     return { success: true };
   }
 
-  async updateSystemRole(code: string, dto: UpdateSystemRoleDto, adminId: string) {
+  async updateSystemRole(code: string, dto: UpdateSystemRoleDto, adminId: string, callerRole: UserRole) {
     const roleCode = code.toUpperCase() as UserRole;
     if (!Object.values(UserRole).includes(roleCode)) {
       throw new BadRequestException('Rôle système invalide');
+    }
+    if (!isSuperAdminRole(callerRole) && roleCode === UserRole.SUPER_ADMIN) {
+      throw new NotFoundException('Rôle introuvable');
     }
     if (!dto.label && dto.description === undefined) {
       throw new BadRequestException('Aucune modification fournie');
@@ -224,6 +234,7 @@ export class RolesService {
 
   private defaultRoleLabels(): Record<string, string> {
     return {
+      SUPER_ADMIN: 'Super administrateur',
       ADMIN: 'Administrateur',
       CHEF: 'Chef de cabinet',
       SECRETAIRE: 'Secrétaire',
@@ -270,5 +281,36 @@ export class RolesService {
       create: { key: CUSTOM_ROLES_KEY, value: JSON.stringify(roles) },
       update: { value: JSON.stringify(roles) },
     });
+  }
+
+  private filterMatrixForCaller<T extends {
+    systemRoles: UserRole[];
+    matrix: Record<string, UserRole[]>;
+    roleLabels: Record<string, string>;
+    roleDescriptions: Record<string, string>;
+  }>(payload: T, callerRole: UserRole): T {
+    if (isSuperAdminRole(callerRole)) return payload;
+
+    return {
+      ...payload,
+      systemRoles: payload.systemRoles.filter((role) => role !== UserRole.SUPER_ADMIN),
+      matrix: this.stripSuperAdminFromMatrix(payload.matrix),
+      roleLabels: this.omitKey(payload.roleLabels, UserRole.SUPER_ADMIN),
+      roleDescriptions: this.omitKey(payload.roleDescriptions, UserRole.SUPER_ADMIN),
+    };
+  }
+
+  private stripSuperAdminFromMatrix(matrix: Record<string, UserRole[]>) {
+    return Object.fromEntries(
+      Object.entries(matrix).map(([key, roles]) => [
+        key,
+        roles.filter((role) => role !== UserRole.SUPER_ADMIN),
+      ]),
+    ) as Record<string, UserRole[]>;
+  }
+
+  private omitKey<T extends Record<string, string>>(record: T, key: string): T {
+    const { [key]: _removed, ...rest } = record;
+    return rest as T;
   }
 }

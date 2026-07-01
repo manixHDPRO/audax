@@ -1,6 +1,7 @@
 import type { AccompaniedPerson, Audience, AudienceStatus, AudienceStatusHistoryEntry, AudienceValidationEntry, Room, UserRole } from '@/types';
 import { STATUS_LABELS } from '@/types';
 import type { AudienceApiRecord } from '@/lib/api-client';
+import { extractGradeFromMotive } from '@/lib/military-grades';
 
 function mapStatusHistory(
   entries?: AudienceApiRecord['statusHistory'],
@@ -154,6 +155,7 @@ export function mapApiAudience(record: AudienceApiRecord): Audience {
     motive: record.motive,
     requesterName: record.requesterName,
     requesterOrg: record.requesterOrg ?? undefined,
+    grade: record.requesterGrade ?? extractGradeFromMotive(record.motive) ?? undefined,
     status: record.status as Audience['status'],
     priority: record.priority as Audience['priority'],
     confidentiality: record.confidentiality as Audience['confidentiality'],

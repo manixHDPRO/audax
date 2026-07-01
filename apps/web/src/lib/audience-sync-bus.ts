@@ -34,15 +34,10 @@ export function buildCreateAudienceAlertSync(
   const alertRoles: UserRole[] = [];
   const alertSoundByRole: Partial<Record<UserRole, NotificationSoundType>> = {};
 
-  // Circuit CEMG : à la création, seul le Protocol est alerté (le Chef intervient plus tard).
+  // Circuit CEMG : à la création, seul le Protocol est alerté (le CEMG intervient après transmission).
   if (visitTargetRole === 'CEMG') {
     alertRoles.push('PROTOCOL');
-    alertSoundByRole.PROTOCOL = 'INFO';
-  }
-
-  if (priority === 'PRIORITE_0') {
-    alertRoles.push('CEMG');
-    alertSoundByRole.CEMG = 'CRITICAL';
+    alertSoundByRole.PROTOCOL = priority === 'PRIORITE_0' ? 'CRITICAL' : 'INFO';
   }
 
   if (visitTargetRole !== 'CEMG' && priority !== 'PRIORITE_0') {

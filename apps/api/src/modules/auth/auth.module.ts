@@ -6,9 +6,11 @@ import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { TwoFactorService } from './two-factor.service';
 import { JwtStrategy } from '../../common/guards/jwt.strategy';
+import { PasswordTokensModule } from '../../common/password-tokens/password-tokens.module';
 
 @Module({
   imports: [
+    PasswordTokensModule,
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
       imports: [ConfigModule],

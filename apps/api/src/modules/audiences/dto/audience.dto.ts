@@ -19,6 +19,10 @@ export class CreateAudienceDto {
   requesterOrg?: string;
 
   @IsOptional()
+  @IsString()
+  requesterGrade?: string;
+
+  @IsOptional()
   @IsIn(AUDIENCE_PRIORITIES)
   priority?: AudiencePriority;
 
@@ -54,6 +58,12 @@ export class UpdateAudienceDto {
   @IsOptional()
   @IsIn(AUDIENCE_PRIORITIES)
   priority?: AudiencePriority;
+}
+
+export class UpdateRequesterGradeDto {
+  @IsOptional()
+  @IsString()
+  requesterGrade?: string;
 }
 
 export class CompleteReceptionDto {

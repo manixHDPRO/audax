@@ -73,9 +73,10 @@ export function NotificationSoundSettings() {
           </div>
           <input
             type="range"
-            min={50}
+            min={0}
             max={100}
-            value={Math.max(50, Math.round(preferences.volume * 100))}
+            step={5}
+            value={Math.round(preferences.volume * 100)}
             onChange={(e) =>
               persist({ ...preferences, volume: Number(e.target.value) / 100 })
             }

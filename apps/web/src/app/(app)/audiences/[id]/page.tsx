@@ -12,9 +12,10 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { RescheduleAudienceModal } from '@/components/audiences/reschedule-audience-modal';
 import { useAudiencesStore } from '@/stores/audiences-store';
 import { formatDate } from '@/lib/utils';
-import { normalizeAccompaniedPersons, describeStatusHistoryEntry, formatUserName, sortStatusHistoryNewestFirst, isAudienceAtCabinet, isCemgCabinetHistoryAudience, isProtocolCemgConfirmQueue, isProtocolCemgReceptionQueue, isSalleReceptionAudience } from '@/lib/audience-utils';
+import { normalizeAccompaniedPersons, describeStatusHistoryEntry, formatUserName, sortStatusHistoryNewestFirst, isAudienceAtCabinet, isCemgCabinetHistoryAudience, isProtocolCemgConfirmQueue, isProtocolCemgReceptionQueue, isSalleReceptionAudience, mapApiAudience } from '@/lib/audience-utils';
+import { useMilitaryGrades } from '@/hooks/use-military-grades';
 import { PRIORITY_LABELS, CONFIDENTIALITY_LABELS, type Audience, type AudienceStatus } from '@/types';
-import { deleteAudienceApi, forwardToDircabApi, validateAudienceApi, completeReceptionApi, confirmAudienceApi, closeAudienceApi } from '@/lib/api-client';
+import { deleteAudienceApi, forwardToDircabApi, validateAudienceApi, completeReceptionApi, confirmAudienceApi, closeAudienceApi, updateRequesterGradeApi } from '@/lib/api-client';
 import { notifyAudienceSync, buildForwardAlertSync, buildValidationAlertSync, buildProtocolFollowUpAlertSync } from '@/lib/audience-sync-bus';
 import {
   useAuthStore,
@@ -36,6 +37,7 @@ export default function AudienceDetailPage({ params }: { params: Promise<{ id: s
   const patchAudienceStatus = useAudiencesStore((s) => s.patchAudienceStatus);
   const removeAudience = useAudiencesStore((s) => s.removeAudience);
   const { accessToken, user, permissions } = useAuthStore();
+  const { labels: militaryGradeLabels } = useMilitaryGrades(accessToken);
   const [loading, setLoading] = useState(true);
   const [detail, setDetail] = useState<Audience | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -48,6 +50,9 @@ export default function AudienceDetailPage({ params }: { params: Promise<{ id: s
   const [closeDialogOpen, setCloseDialogOpen] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [actionError, setActionError] = useState('');
+  const [gradeDraft, setGradeDraft] = useState('');
+  const [gradeSaving, setGradeSaving] = useState(false);
+  const [gradeError, setGradeError] = useState('');
   const canDelete = canDeleteAudience(user?.role, permissions);
   const canValidate = canValidateAudience(user?.role, permissions);
   const canPlanify = canPlanifyAudience(user?.role, permissions);
@@ -77,6 +82,27 @@ export default function AudienceDetailPage({ params }: { params: Promise<{ id: s
   }, [id, accessToken, fetchAudienceById, user?.role]);
 
   const displayAudience = detail ?? audience;
+
+  useEffect(() => {
+    setGradeDraft(displayAudience?.grade ?? '');
+    setGradeError('');
+  }, [displayAudience?.grade, id]);
+
+  async function handleSaveRequesterGrade() {
+    if (!accessToken || !displayAudience) return;
+    setGradeSaving(true);
+    setGradeError('');
+    try {
+      const updated = await updateRequesterGradeApi(accessToken, displayAudience.id, gradeDraft);
+      const mapped = mapApiAudience(updated);
+      setDetail((prev) => (prev ? { ...prev, ...mapped, statusHistory: prev.statusHistory, validations: prev.validations } : mapped));
+      upsertAudience(mapped);
+    } catch (err) {
+      setGradeError(err instanceof Error ? err.message : 'Erreur lors de la mise à jour du grade');
+    } finally {
+      setGradeSaving(false);
+    }
+  }
 
   if (isWaitingRoomRole(user?.role)) {
     return (
@@ -470,9 +496,35 @@ export default function AudienceDetailPage({ params }: { params: Promise<{ id: s
             <CardHeader><CardTitle>Détails</CardTitle></CardHeader>
             <dl className="space-y-3 text-sm">
               <div><dt className="text-cream/40">Catégorie</dt><dd>{displayAudience.category}</dd></div>
-              {displayAudience.grade && (
+              {canDelete ? (
+                <div>
+                  <dt className="text-cream/40">Grade du demandeur</dt>
+                  <dd className="mt-1 space-y-2">
+                    <select
+                      value={gradeDraft}
+                      onChange={(e) => setGradeDraft(e.target.value)}
+                      aria-label="Grade du demandeur"
+                      className="w-full h-9 px-3 rounded-lg bg-carbon-800 border border-carbon-600 text-sm text-cream focus:outline-none focus:border-military-500"
+                    >
+                      <option value="">Aucun grade</option>
+                      {militaryGradeLabels.map((g) => (
+                        <option key={g} value={g}>{g}</option>
+                      ))}
+                    </select>
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={gradeSaving || gradeDraft === (displayAudience.grade ?? '')}
+                      onClick={() => void handleSaveRequesterGrade()}
+                    >
+                      {gradeSaving ? 'Enregistrement…' : 'Enregistrer le grade'}
+                    </Button>
+                    {gradeError ? <p className="text-xs text-red-400">{gradeError}</p> : null}
+                  </dd>
+                </div>
+              ) : displayAudience.grade ? (
                 <div><dt className="text-cream/40">Grade</dt><dd>{displayAudience.grade}</dd></div>
-              )}
+              ) : null}
               {displayAudience.visitMode && (
                 <div><dt className="text-cream/40">Type de visite</dt><dd>{displayAudience.visitMode === 'ACCOMPAGNE' ? 'Accompagné' : 'Individuel'}</dd></div>
               )}

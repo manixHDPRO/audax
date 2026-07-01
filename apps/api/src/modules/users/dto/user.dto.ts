@@ -7,11 +7,6 @@ export class CreateUserDto {
   @IsEmail()
   email!: string;
 
-  @ApiProperty({ example: 'Audax2026!' })
-  @IsString()
-  @MinLength(8)
-  password!: string;
-
   @ApiProperty({ example: 'Paul' })
   @IsString()
   @MinLength(1)
@@ -69,11 +64,4 @@ export class UpdateUserDto {
   @IsOptional()
   @IsString()
   bureauId?: string;
-}
-
-export class ResetPasswordDto {
-  @ApiProperty({ example: 'Audax2026!' })
-  @IsString()
-  @MinLength(8)
-  password!: string;
 }

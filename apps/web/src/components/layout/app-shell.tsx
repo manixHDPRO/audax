@@ -275,6 +275,7 @@ function TopBar({
   unreadNotifications: number;
   unreadMessages: number;
 }) {
+  const router = useRouter();
   const { user, logout, permissions } = useAuthStore();
   const canUseChat = canAccessMenu('MENU_CHAT', user?.role, permissions);
 
@@ -341,7 +342,10 @@ function TopBar({
         </Link>
 
         <button 
-          onClick={() => void logout()} 
+          onClick={async () => {
+            await logout();
+            router.replace('/login');
+          }} 
           className="w-11 h-11 rounded-2xl glass flex items-center justify-center hover:bg-red-900/20 hover:border-red-500/50 transition-all group border border-military-800/30 cursor-pointer"
           title="Déconnexion"
         >
@@ -352,7 +356,7 @@ function TopBar({
   );
 }
 
-/* ─── Bottom command dock (desktop + mobile trigger) ─── */
+/* ─── Bottom command dock (tablette + mobile) ─── */
 function CommandDock({
   onOpenOrbital,
   activePath,
@@ -368,7 +372,7 @@ function CommandDock({
   const quickItems = items.filter((i) => quickHrefs.includes(i.href));
 
   return (
-    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-30 hidden sm:flex">
+    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-30 flex lg:hidden">
       <motion.div
         initial={{ y: 80, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
@@ -534,7 +538,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           />
         )}
 
-        <main className={cn('flex-1 min-h-0 overflow-y-auto', isAuthenticated && 'pb-28')}>
+        <main className={cn('flex-1 min-h-0 overflow-y-auto', isAuthenticated && 'pb-28 lg:pb-0')}>
           {children}
         </main>
 

@@ -18,7 +18,7 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [apiReady, setApiReady] = useState<boolean | null>(null);
   const [checkingApi, setCheckingApi] = useState(false);
-  const { login, verify2FA, cancel2FA, pending2FA } = useAuthStore();
+  const { login, verify2FA, cancel2FA, pending2FA, loginError } = useAuthStore();
   const router = useRouter();
 
   const probeApi = useCallback(async () => {
@@ -83,7 +83,7 @@ export default function LoginPage() {
       setApiReady(false);
       setError(`${API_UNAVAILABLE_MESSAGE} ${API_REQUIRED_MESSAGE}`);
     }
-    else setError('Identifiants invalides');
+    else setError(loginError ?? 'Identifiants invalides');
   };
 
   const show2FAStep = !!pending2FA;
@@ -133,7 +133,7 @@ export default function LoginPage() {
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder="fardc@.cd"
+                    placeholder="Entrer votre adresse mail"
                     autoComplete="username"
                     className="w-full h-11 px-4 rounded-xl bg-carbon-900/50 border border-military-800/50 text-cream focus:outline-none focus:border-military-500 focus:glow-green transition-all font-mono text-sm"
                     required
@@ -146,6 +146,7 @@ export default function LoginPage() {
                       type={showPassword ? 'text' : 'password'}
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
+                      placeholder="Entrer votre mot de passe"
                       autoComplete="current-password"
                       className="w-full h-11 px-4 pr-11 rounded-xl bg-carbon-900/50 border border-military-800/50 text-cream focus:outline-none focus:border-military-500 focus:glow-green transition-all font-mono text-sm"
                       required
@@ -189,16 +190,6 @@ export default function LoginPage() {
                 <Button type="button" variant="tactical" size="sm" className="w-full border-amber-800/50 text-amber-500 hover:border-amber-500" onClick={() => void probeApi()}>
                   Réinitialiser la Liaison
                 </Button>
-              </div>
-            )}
-
-            {apiReady === true && (
-              <div className="flex items-center justify-between px-1">
-                <p className="text-[9px] font-mono text-military-500 flex items-center gap-2 uppercase tracking-widest">
-                  <span className="w-1.5 h-1.5 rounded-full bg-military-500 animate-pulse shadow-[0_0_5px_rgba(74,124,74,0.8)]" />
-                  Lien API Établi
-                </p>
-                <span className="text-[9px] font-mono text-military-800">SECURE_CHANNEL_ALPHA</span>
               </div>
             )}
 

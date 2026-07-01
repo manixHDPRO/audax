@@ -68,6 +68,7 @@ export const PERMISSION_GROUPS: { id: string; label: string; keys: string[] }[] 
 ];
 
 export const ROLE_DESCRIPTIONS: Record<UserRole, string> = {
+  SUPER_ADMIN: 'Accès total à la plateforme, invisible pour les administrateurs.',
   ADMIN: 'Accès complet à la plateforme et à l\'administration.',
   CHEF: 'Pilotage Cabinet, validation et traitement des audiences déléguées.',
   SECRETAIRE: 'Planification et suivi des audiences.',

@@ -9,14 +9,7 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import {
-  type UserListItem,
-  type CreateUserPayload,
-  type UpdateUserPayload,
-  type OrgUnit,
-  listCabinetsApi,
-  listBureausApi,
-} from '@/lib/api-client';
+import { type UserListItem, type CreateUserPayload, type UpdateUserPayload, listCabinetsApi, listBureausApi, type OrgUnit } from '@/lib/api-client';
 import { ROLE_LABELS, type UserRole } from '@/types';
 import { SYSTEM_ROLES } from '@/lib/permissions';
 import { useAuthStore } from '@/stores/auth-store';
@@ -68,26 +61,37 @@ export function UserFormModal({ open, onOpenChange, user, onSubmit }: UserFormMo
     const bureauId = form.get('bureauId') as string;
 
     try {
-      const payload: any = {
+      const payload: Record<string, string | undefined> = {
         firstName: form.get('firstName') as string,
         lastName: form.get('lastName') as string,
         role: selectedRole,
       };
 
       if (selectedRole === 'CEMG' || selectedRole === 'SECRETAIRE' || selectedRole === 'PROTOCOL' || selectedRole === 'ASSISTANT') {
-        payload.cabinetId = cabinetId || null;
-        payload.bureauId = null;
+        payload.cabinetId = cabinetId || undefined;
+        payload.bureauId = undefined;
       } else {
-        payload.bureauId = bureauId || null;
-        payload.cabinetId = null;
+        payload.bureauId = bureauId || undefined;
+        payload.cabinetId = undefined;
       }
 
       if (isEdit) {
-        await onSubmit(payload as UpdateUserPayload);
+        await onSubmit({
+          firstName: payload.firstName!,
+          lastName: payload.lastName!,
+          role: payload.role!,
+          cabinetId: payload.cabinetId,
+          bureauId: payload.bureauId,
+        });
       } else {
-        payload.email = form.get('email') as string;
-        payload.password = form.get('password') as string;
-        await onSubmit(payload as CreateUserPayload);
+        await onSubmit({
+          email: form.get('email') as string,
+          firstName: payload.firstName!,
+          lastName: payload.lastName!,
+          role: payload.role!,
+          cabinetId: payload.cabinetId,
+          bureauId: payload.bureauId,
+        });
       }
       onOpenChange(false);
     } catch (err) {
@@ -107,21 +111,15 @@ export function UserFormModal({ open, onOpenChange, user, onSubmit }: UserFormMo
           <DialogDescription>
             {isEdit
               ? 'Modifiez les informations et l\'affectation de l\'utilisateur.'
-              : 'Créez un compte avec un mot de passe temporaire à communiquer à l\'utilisateur.'}
+              : 'Un lien d\'activation sera envoyé par e-mail pour que l\'utilisateur définisse son mot de passe.'}
           </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {!isEdit && (
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label htmlFor="email" className={labelClass}>Email</label>
-                <input id="email" name="email" type="email" required className={inputClass} placeholder="utilisateur@audax.fardc.cd" />
-              </div>
-              <div>
-                <label htmlFor="password" className={labelClass}>Mot de passe</label>
-                <input id="password" name="password" type="password" required minLength={8} className={inputClass} placeholder="Minimum 8" />
-              </div>
+            <div>
+              <label htmlFor="email" className={labelClass}>Email</label>
+              <input id="email" name="email" type="email" required className={inputClass} placeholder="utilisateur@audax.fardc.cd" />
             </div>
           )}
 
@@ -183,7 +181,7 @@ export function UserFormModal({ open, onOpenChange, user, onSubmit }: UserFormMo
               Annuler
             </Button>
             <Button type="submit" disabled={loading}>
-              {loading ? 'Enregistrement…' : isEdit ? 'Enregistrer' : 'Créer'}
+              {loading ? 'Enregistrement…' : isEdit ? 'Enregistrer' : 'Créer et envoyer l\'invitation'}
             </Button>
           </div>
         </form>

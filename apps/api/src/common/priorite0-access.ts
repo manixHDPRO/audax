@@ -2,12 +2,13 @@ import { NotFoundException } from '@nestjs/common';
 import { AudienceStatus, Priority, UserRole } from '@prisma/client';
 import { UserContext } from './audience-role-access';
 import { isDelegatedToDircab } from './audience-delegation';
+import { isPlatformAdmin } from './super-admin-access';
 
-/** Audiences Priorité 0 : visibles par l'Administrateur, le Protocol et le CEMG uniquement. */
+/** Audiences Priorité 0 : visibles par le Super Admin, l'Administrateur, le Protocol et le CEMG uniquement. */
 export function canViewPriorite0Audiences(role: UserRole | string): boolean {
   return (
     role === UserRole.PROTOCOL ||
-    role === UserRole.ADMIN ||
+    isPlatformAdmin(role) ||
     role === UserRole.CEMG
   );
 }
@@ -35,7 +36,7 @@ export function assertCanViewAudience(audience: AudienceAccessRecord, user: User
     throw new NotFoundException('Audience introuvable');
   }
 
-  if (role === UserRole.ADMIN) return;
+  if (isPlatformAdmin(role)) return;
 
   if (role === UserRole.CEMG && audience.status === AudienceStatus.EN_ATTENTE) {
     throw new NotFoundException('Audience introuvable');

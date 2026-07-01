@@ -140,45 +140,26 @@ export async function notifyAudienceCreated(
 
   const chefRecipients = pickChefRecipients(users, scope, audience);
 
-  const cemgRecipients = isPriorite0
-    ? users.filter((user) => user.role === UserRole.CEMG)
-    : [];
-
   const uniqueProtocol = [...new Map(protocolRecipients.map((u) => [u.id, u])).values()];
   const uniqueChef = [...new Map(chefRecipients.map((u) => [u.id, u])).values()];
   const uniqueStandard = [...new Map([...uniqueProtocol, ...uniqueChef].map((u) => [u.id, u])).values()];
-  const uniqueCemg = [...new Map(cemgRecipients.map((u) => [u.id, u])).values()];
 
   if (uniqueStandard.length) {
     await prisma.notification.createMany({
       data: uniqueStandard.map((user) => ({
         userId: user.id,
-        type: NotificationType.INFO,
-        title: 'Nouvelle demande d\'audience',
+        type: isPriorite0 && user.role === UserRole.PROTOCOL ? NotificationType.CRITICAL : NotificationType.INFO,
+        title: isPriorite0 && user.role === UserRole.PROTOCOL ? 'Audience Priorité 0' : 'Nouvelle demande d\'audience',
         message: `${audience.reference} — ${audience.subject} (${audience.requesterName})`,
         link: `/audiences/${audience.id}`,
       })),
     });
   }
 
-  if (uniqueCemg.length) {
-    await prisma.notification.createMany({
-      data: uniqueCemg.map((user) => ({
-        userId: user.id,
-        type: NotificationType.CRITICAL,
-        title: 'Audience Priorité 0',
-        message: `${audience.reference} — ${audience.subject} (${audience.requesterName})`,
-        link: `/audiences/${audience.id}`,
-      })),
-    });
-  }
-
-  const criticalRecipientIds = uniqueCemg.map((u) => u.id);
+  const criticalRecipientIds: string[] = [];
   const chefRecipientIds = uniqueChef.map((u) => u.id);
   const protocolRecipientIds = uniqueProtocol.map((u) => u.id);
-  const recipientIds = [
-    ...new Set([...uniqueStandard.map((u) => u.id), ...criticalRecipientIds]),
-  ];
+  const recipientIds = uniqueStandard.map((u) => u.id);
 
   return { recipientIds, criticalRecipientIds, chefRecipientIds, protocolRecipientIds };
 }

@@ -299,6 +299,7 @@ export interface CreateAudiencePayload {
   motive: string;
   requesterName: string;
   requesterOrg?: string;
+  requesterGrade?: string;
   priority?: string;
   confidentiality?: string;
   category?: string;
@@ -405,6 +406,18 @@ export async function createAudienceApi(token: string, payload: CreateAudiencePa
   });
 }
 
+export async function updateRequesterGradeApi(
+  token: string,
+  audienceId: string,
+  requesterGrade: string,
+) {
+  return apiFetch<AudienceApiRecord>(`/audiences/${audienceId}/requester-grade`, {
+    method: 'PATCH',
+    token,
+    body: JSON.stringify({ requesterGrade: requesterGrade || null }),
+  });
+}
+
 export interface AudienceApiRecord {
   id: string;
   reference: string;
@@ -412,6 +425,7 @@ export interface AudienceApiRecord {
   motive: string;
   requesterName: string;
   requesterOrg?: string | null;
+  requesterGrade?: string | null;
   status: string;
   priority: string;
   confidentiality: string;
@@ -535,7 +549,6 @@ export interface UserListItem {
 
 export interface CreateUserPayload {
   email: string;
-  password: string;
   firstName: string;
   lastName: string;
   role: string;
@@ -555,6 +568,31 @@ export interface UpdateUserPayload {
 export interface OrgUnit {
   id: string;
   name: string;
+}
+
+export interface MilitaryGradeItem {
+  id: string;
+  label: string;
+  createdAt: string;
+}
+
+export async function listMilitaryGradesApi(token: string) {
+  return apiFetch<MilitaryGradeItem[]>('/military-grades', { token });
+}
+
+export async function createMilitaryGradeApi(token: string, label: string) {
+  return apiFetch<MilitaryGradeItem>('/military-grades', {
+    method: 'POST',
+    token,
+    body: JSON.stringify({ label }),
+  });
+}
+
+export async function deleteMilitaryGradeApi(token: string, id: string) {
+  return apiFetch<{ success: boolean }>(`/military-grades/${id}`, {
+    method: 'DELETE',
+    token,
+  });
 }
 
 export async function listCabinetsApi(token: string) {
@@ -622,11 +660,23 @@ export async function toggleUserActiveApi(token: string, id: string) {
   });
 }
 
-export async function resetUserPasswordApi(token: string, id: string, password: string) {
-  return apiFetch<{ success: boolean }>(`/users/${id}/password`, {
-    method: 'PATCH',
+export async function sendUserPasswordLinkApi(token: string, id: string) {
+  return apiFetch<{ success: boolean; message: string }>(`/users/${id}/send-password-link`, {
+    method: 'POST',
     token,
-    body: JSON.stringify({ password }),
+  });
+}
+
+export async function validatePasswordTokenApi(token: string) {
+  return apiFetch<{ valid: boolean; email: string; type: 'INVITE' | 'RESET' }>(
+    `/auth/password-token/validate?token=${encodeURIComponent(token)}`,
+  );
+}
+
+export async function setPasswordApi(token: string, password: string) {
+  return apiFetch<{ success: boolean }>('/auth/set-password', {
+    method: 'POST',
+    body: JSON.stringify({ token, password }),
   });
 }
 

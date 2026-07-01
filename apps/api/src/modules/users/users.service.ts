@@ -4,10 +4,17 @@ import {
   ConflictException,
   BadRequestException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { PasswordTokenType, Prisma, UserRole } from '@prisma/client';
+import { randomBytes } from 'crypto';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../prisma/prisma.service';
-import { CreateUserDto, UpdateUserDto, ResetPasswordDto } from './dto/user.dto';
+import { CreateUserDto, UpdateUserDto } from './dto/user.dto';
+import { PasswordTokensService } from '../../common/password-tokens/password-tokens.service';
+import {
+  assertCallerCanAccessUser,
+  assertRoleAssignable,
+  hiddenSuperAdminUserFilter,
+} from '../../common/super-admin-access';
 
 const BCRYPT_ROUNDS = 12;
 
@@ -34,53 +41,64 @@ const userSelect = {
 
 @Injectable()
 export class UsersService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private passwordTokens: PasswordTokensService,
+  ) {}
 
-  findAll() {
+  findAll(callerRole: UserRole) {
     return this.prisma.user.findMany({
+      where: hiddenSuperAdminUserFilter(callerRole),
       select: userSelect,
       orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
     });
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, callerRole: UserRole) {
     const user = await this.prisma.user.findUnique({
       where: { id },
       select: userSelect,
     });
     if (!user) throw new NotFoundException('Utilisateur introuvable');
+    assertCallerCanAccessUser(callerRole, user.role);
     return user;
   }
 
-  async create(dto: CreateUserDto, adminId: string) {
+  async create(dto: CreateUserDto, adminId: string, callerRole: UserRole) {
+    assertRoleAssignable(dto.role);
     const existing = await this.prisma.user.findUnique({ where: { email: dto.email } });
     if (existing) throw new ConflictException('Cet email est déjà utilisé');
 
-    const passwordHash = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
+    const placeholderHash = await bcrypt.hash(randomBytes(32).toString('hex'), BCRYPT_ROUNDS);
 
     const user = await this.prisma.user.create({
       data: {
         email: dto.email,
-        passwordHash,
+        passwordHash: placeholderHash,
         firstName: dto.firstName,
         lastName: dto.lastName,
         role: dto.role,
         cabinetId: dto.cabinetId,
         bureauId: dto.bureauId,
+        isActive: false,
       },
       select: userSelect,
     });
 
+    await this.passwordTokens.sendTokenEmail(user.id, PasswordTokenType.INVITE);
+
     await this.logAction(adminId, 'USER_CREATED', user.id, {
       email: user.email,
       role: user.role,
+      invitationSent: true,
     });
 
-    return user;
+    return { ...user, invitationSent: true };
   }
 
-  async update(id: string, dto: UpdateUserDto, adminId: string) {
-    await this.findOne(id);
+  async update(id: string, dto: UpdateUserDto, adminId: string, callerRole: UserRole) {
+    await this.findOne(id, callerRole);
+    if (dto.role) assertRoleAssignable(dto.role);
 
     if (id === adminId) {
       if (dto.isActive === false) {
@@ -102,33 +120,24 @@ export class UsersService {
     return user;
   }
 
-  async resetPassword(id: string, dto: ResetPasswordDto, adminId: string) {
-    await this.findOne(id);
+  async sendPasswordLink(id: string, adminId: string, callerRole: UserRole) {
+    await this.findOne(id, callerRole);
+    const hasPassword = await this.hasPasswordSet(id);
+    const type = hasPassword ? PasswordTokenType.RESET : PasswordTokenType.INVITE;
 
-    const passwordHash = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
+    await this.passwordTokens.sendTokenEmail(id, type);
 
-    await this.prisma.user.update({
-      where: { id },
-      data: {
-        passwordHash,
-        failedAttempts: 0,
-        lockedUntil: null,
-      },
-    });
+    await this.logAction(adminId, 'USER_PASSWORD_LINK_SENT', id, { type });
 
-    await this.prisma.refreshToken.deleteMany({ where: { userId: id } });
-
-    await this.logAction(adminId, 'USER_PASSWORD_RESET', id);
-
-    return { success: true };
+    return { success: true, message: 'Un lien a été envoyé par e-mail' };
   }
 
-  async toggleActive(id: string, adminId: string) {
+  async toggleActive(id: string, adminId: string, callerRole: UserRole) {
     if (id === adminId) {
       throw new BadRequestException('Vous ne pouvez pas désactiver votre propre compte');
     }
 
-    const current = await this.findOne(id);
+    const current = await this.findOne(id, callerRole);
 
     const user = await this.prisma.user.update({
       where: { id },
@@ -147,6 +156,14 @@ export class UsersService {
     );
 
     return user;
+  }
+
+  private async hasPasswordSet(id: string): Promise<boolean> {
+    const user = await this.prisma.user.findUnique({
+      where: { id },
+      select: { passwordSetAt: true },
+    });
+    return !!user?.passwordSetAt;
   }
 
   private async logAction(

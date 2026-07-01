@@ -10,6 +10,7 @@ datasource db {
 }
 
 enum UserRole {
+  SUPER_ADMIN
   ADMIN
   CHEF
   SECRETAIRE
@@ -18,6 +19,11 @@ enum UserRole {
   SALLE_ATTENTE
   OBSERVATEUR
   ASSISTANT
+}
+
+enum PasswordTokenType {
+  INVITE
+  RESET
 }
 
 enum AudienceStatus {
@@ -93,6 +99,7 @@ model User {
   failedAttempts  Int       @default(0)
   lockedUntil     DateTime?
   lastLoginAt     DateTime?
+  passwordSetAt   DateTime?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
@@ -102,7 +109,8 @@ model User {
   comments         ValidationComment[]
   notifications    Notification[]
   auditLogs        AuditLog[]
-  refreshTokens    RefreshToken[]
+  refreshTokens       RefreshToken[]
+  passwordResetTokens PasswordResetToken[]
   chatParticipants ConversationParticipant[]
   chatMessages     ChatMessage[]
   cabinetId        String?
@@ -144,6 +152,20 @@ model RefreshToken {
   @@map("refresh_tokens")
 }
 
+model PasswordResetToken {
+  id        String            @id @default(cuid())
+  token     String            @unique
+  userId    String
+  type      PasswordTokenType
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime          @default(now())
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("password_reset_tokens")
+}
+
 model Visitor {
   id           String      @id @default(cuid())
   firstName    String
@@ -170,6 +192,7 @@ model Audience {
   motive          String
   requesterName   String
   requesterOrg    String?
+  requesterGrade  String?
   status          AudienceStatus    @default(EN_ATTENTE)
   priority        Priority          @default(NORMALE)
   confidentiality Confidentiality @default(STANDARD)

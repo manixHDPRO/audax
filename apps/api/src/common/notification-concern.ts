@@ -1,6 +1,7 @@
 import { UserRole } from '@prisma/client';
 import { UserContext } from './audience-role-access';
 import { assertCanViewAudience } from './priorite0-access';
+import { isSuperAdminRole } from './super-admin-access';
 
 interface AudienceConcernRecord {
   priority: string;
@@ -28,6 +29,10 @@ export function isUserConcernedByAudience(
   audience: AudienceConcernRecord,
   user: UserContext,
 ): boolean {
+  if (isSuperAdminRole(user.role)) {
+    return true;
+  }
+
   if (user.role === UserRole.ADMIN) {
     return audience.createdById === user.id || audience.visitTargetUserId === user.id;
   }

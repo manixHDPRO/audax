@@ -1,5 +1,6 @@
 import { AudienceStatus, Prisma, UserRole } from '@prisma/client';
 import { priorite0ExcludeWhere } from './priorite0-access';
+import { isPlatformAdmin } from './super-admin-access';
 
 export interface UserContext {
   id: string;
@@ -14,7 +15,7 @@ export function audienceListWhereForRole(user: UserContext): Prisma.AudienceWher
   const base = priorite0ExcludeWhere(role);
 
   // Les admins voient tout (avec le filtre P0 de base)
-  if (role === UserRole.ADMIN) {
+  if (isPlatformAdmin(role)) {
     return base;
   }
 
@@ -150,7 +151,7 @@ export function audienceListWhereForRole(user: UserContext): Prisma.AudienceWher
 export function accompanimentPendingWhereForRole(user: UserContext): Prisma.AudienceWhereInput {
   const { id, role, cabinetId, bureauId } = user;
 
-  if (role === UserRole.ADMIN) {
+  if (isPlatformAdmin(role)) {
     return {};
   }
 
@@ -173,9 +174,9 @@ export function accompanimentPendingWhereForRole(user: UserContext): Prisma.Audi
 }
 
 export function shouldNotifyOnAudienceCreate(role: UserRole): boolean {
-  return role === UserRole.PROTOCOL || role === UserRole.ADMIN;
+  return role === UserRole.PROTOCOL || isPlatformAdmin(role);
 }
 
 export function shouldNotifyOnDircabForward(role: UserRole): boolean {
-  return role === UserRole.CHEF || role === UserRole.ADMIN;
+  return role === UserRole.CHEF || isPlatformAdmin(role);
 }

@@ -17,6 +17,7 @@ interface AuthState {
   refreshToken: string | null;
   isAuthenticated: boolean;
   pending2FA: { email: string; tempToken?: string } | null;
+  loginError: string | null;
   login: (email: string, password: string) => Promise<LoginResult>;
   verify2FA: (code: string) => Promise<boolean>;
   cancel2FA: () => void;
@@ -34,6 +35,7 @@ export const useAuthStore = create<AuthState>()(
       refreshToken: null,
       isAuthenticated: false,
       pending2FA: null,
+      loginError: null,
 
       completeAuth: (data) => {
         if (data.user && data.accessToken) {
@@ -52,6 +54,8 @@ export const useAuthStore = create<AuthState>()(
       login: async (email, password) => {
         if (!isApiConfigured()) return 'api_error';
 
+        set({ loginError: null });
+
         try {
           const data = await loginApi(email, password);
           if (data.requires2FA && data.tempToken) {
@@ -64,8 +68,13 @@ export const useAuthStore = create<AuthState>()(
             return 'ok';
           }
           return 'fail';
-        } catch {
-          return 'api_error';
+        } catch (err) {
+          const message = err instanceof Error ? err.message : API_UNAVAILABLE_MESSAGE;
+          if (message === API_UNAVAILABLE_MESSAGE) {
+            return 'api_error';
+          }
+          set({ loginError: message });
+          return 'fail';
         }
       },
 
@@ -226,7 +235,7 @@ export function getMonitoringRoute(role?: string, permissions?: string[]) {
 }
 
 export function canManageUsers(role?: string, permissions?: string[]) {
-  return checkPermission('MANAGE_USERS', permissions, role, ['ADMIN']);
+  return checkPermission('MANAGE_USERS', permissions, role, ['ADMIN', 'SUPER_ADMIN']);
 }
 
 export function canViewAudit(role?: string, permissions?: string[]) {
@@ -234,7 +243,7 @@ export function canViewAudit(role?: string, permissions?: string[]) {
 }
 
 export function canDeleteAudience(role?: string, permissions?: string[]) {
-  return checkPermission('DELETE_AUDIENCE', permissions, role, ['ADMIN']);
+  return checkPermission('DELETE_AUDIENCE', permissions, role, ['ADMIN', 'SUPER_ADMIN']);
 }
 
 export function canRegisterVisitor(role?: string, permissions?: string[]) {
@@ -278,7 +287,7 @@ export function isWaitingRoomRole(role?: string) {
 
 /** Priorité 0 : filtrage dédié pour Protocol et Administrateur. */
 export function canFilterAudiencesByPriority(role?: string) {
-  return role === 'PROTOCOL' || role === 'ADMIN';
+  return role === 'PROTOCOL' || role === 'ADMIN' || role === 'SUPER_ADMIN';
 }
 
 export function receivesLiveAccompanimentUpdates(role?: string) {
@@ -287,7 +296,7 @@ export function receivesLiveAccompanimentUpdates(role?: string) {
 
 /** Protocol, Admin, Dircab et CEMG : rafraîchissement live des audiences. */
 export function receivesLiveAudienceUpdates(role?: string) {
-  return role === 'PROTOCOL' || role === 'ADMIN' || role === 'CHEF' || role === 'CEMG';
+  return role === 'PROTOCOL' || role === 'ADMIN' || role === 'SUPER_ADMIN' || role === 'CHEF' || role === 'CEMG';
 }
 
 export function getDefaultAppRoute(role?: string, permissions?: string[]) {

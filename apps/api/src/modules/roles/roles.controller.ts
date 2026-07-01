@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Patch, Delete, Body, Param, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
+import { UserRole } from '@prisma/client';
 import { RolesService } from './roles.service';
 import { CreateCustomRoleDto, UpdateCustomRoleDto, UpdateRoleMatrixDto, UpdateSystemRoleDto } from './dto/role.dto';
 import { RolesGuard } from '../../common/guards/roles.guard';
@@ -16,13 +17,17 @@ export class RolesController {
   constructor(private rolesService: RolesService) {}
 
   @Get('matrix')
-  getMatrix() {
-    return this.rolesService.getMatrix();
+  getMatrix(@CurrentUser('role') callerRole: UserRole) {
+    return this.rolesService.getMatrix(callerRole);
   }
 
   @Patch('matrix')
-  updateMatrix(@Body() dto: UpdateRoleMatrixDto, @CurrentUser('sub') adminId: string) {
-    return this.rolesService.updateMatrix(dto, adminId);
+  updateMatrix(
+    @Body() dto: UpdateRoleMatrixDto,
+    @CurrentUser('sub') adminId: string,
+    @CurrentUser('role') callerRole: UserRole,
+  ) {
+    return this.rolesService.updateMatrix(dto, adminId, callerRole);
   }
 
   @Post()
@@ -35,8 +40,9 @@ export class RolesController {
     @Param('code') code: string,
     @Body() dto: UpdateSystemRoleDto,
     @CurrentUser('sub') adminId: string,
+    @CurrentUser('role') callerRole: UserRole,
   ) {
-    return this.rolesService.updateSystemRole(code, dto, adminId);
+    return this.rolesService.updateSystemRole(code, dto, adminId, callerRole);
   }
 
   @Patch(':id')

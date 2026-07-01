@@ -6,8 +6,10 @@ import { randomBytes } from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { LoginDto } from './dto/login.dto';
 import { ChangePasswordDto } from './dto/profile.dto';
+import { SetPasswordDto } from './dto/set-password.dto';
 import { TwoFactorService } from './two-factor.service';
 import { PermissionsService } from '../../common/permissions/permissions.service';
+import { PasswordTokensService } from '../../common/password-tokens/password-tokens.service';
 import { UserRole } from '@prisma/client';
 
 const MAX_ATTEMPTS = 5;
@@ -34,6 +36,7 @@ export class AuthService {
     private config: ConfigService,
     private twoFactor: TwoFactorService,
     private permissionsService: PermissionsService,
+    private passwordTokens: PasswordTokensService,
   ) {}
 
   async login(dto: LoginDto, ip?: string) {
@@ -42,6 +45,11 @@ export class AuthService {
     if (!user) {
       await this.logAttempt(null, dto.email, ip, false);
       throw new UnauthorizedException('Identifiants invalides');
+    }
+
+    if (!user.passwordSetAt) {
+      await this.logAttempt(user.id, dto.email, ip, false);
+      throw new ForbiddenException('Activez votre compte via le lien reçu par e-mail');
     }
 
     if (!user.isActive) {
@@ -186,6 +194,10 @@ export class AuthService {
   }
 
   async resolvePermissions(role: UserRole): Promise<string[]> {
+    if (role === UserRole.SUPER_ADMIN) {
+      return this.permissionsService.getPermissionKeys();
+    }
+
     const matrix = await this.permissionsService.getMatrix();
     return Object.entries(matrix)
       .filter(([, roles]) => roles.includes(role))
@@ -222,6 +234,33 @@ export class AuthService {
         action: 'PASSWORD_CHANGED',
         entity: 'Auth',
         entityId: userId,
+      },
+    });
+
+    return { success: true };
+  }
+
+  async validatePasswordToken(token: string) {
+    const record = await this.passwordTokens.validateToken(token);
+    return {
+      valid: true,
+      email: record.user.email,
+      type: record.type,
+    };
+  }
+
+  async setPassword(dto: SetPasswordDto) {
+    const passwordHash = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
+    const record = await this.passwordTokens.validateToken(dto.token);
+
+    await this.passwordTokens.consumeToken(dto.token, passwordHash);
+
+    await this.prisma.auditLog.create({
+      data: {
+        userId: record.userId,
+        action: record.type === 'INVITE' ? 'PASSWORD_SET_INVITE' : 'PASSWORD_SET_RESET',
+        entity: 'Auth',
+        entityId: record.userId,
       },
     });
 
