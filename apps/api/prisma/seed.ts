@@ -176,6 +176,39 @@ async function main() {
     }),
   ]);
 
+  await Promise.all([
+    prisma.room.upsert({
+      where: { name: 'Salle Stratégique A' },
+      update: {},
+      create: {
+        name: 'Salle Stratégique A',
+        capacity: 12,
+        floor: '3',
+        status: RoomStatus.LIBRE,
+      },
+    }),
+    prisma.room.upsert({
+      where: { name: 'Salle Diplomatique B' },
+      update: {},
+      create: {
+        name: 'Salle Diplomatique B',
+        capacity: 8,
+        floor: '2',
+        status: RoomStatus.LIBRE,
+      },
+    }),
+    prisma.room.upsert({
+      where: { name: 'Bureau Chef EMG' },
+      update: {},
+      create: {
+        name: 'Bureau Chef EMG',
+        capacity: 6,
+        floor: '4',
+        status: RoomStatus.RESERVEE,
+      },
+    }),
+  ]);
+
   for (const user of users) {
     const welcome = await prisma.notification.findFirst({
       where: { userId: user.id, title: 'Bienvenue sur AUDAX' },

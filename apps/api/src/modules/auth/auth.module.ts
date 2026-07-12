@@ -7,6 +7,7 @@ import { AuthController } from './auth.controller';
 import { TwoFactorService } from './two-factor.service';
 import { JwtStrategy } from '../../common/guards/jwt.strategy';
 import { PasswordTokensModule } from '../../common/password-tokens/password-tokens.module';
+import { resolveJwtSecret } from '../../common/security/jwt-secret';
 
 @Module({
   imports: [
@@ -16,7 +17,10 @@ import { PasswordTokensModule } from '../../common/password-tokens/password-toke
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
-        secret: config.get('JWT_SECRET') ?? 'dev-secret',
+        secret: resolveJwtSecret(
+          config.get<string>('JWT_SECRET'),
+          config.get<string>('NODE_ENV'),
+        ),
         signOptions: { expiresIn: config.get('JWT_EXPIRES_IN') ?? '15m' },
       }),
     }),

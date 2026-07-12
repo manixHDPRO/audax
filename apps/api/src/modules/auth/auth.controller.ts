@@ -1,6 +1,17 @@
-import { Controller, Post, Body, Req, HttpCode, Get, Patch, UseGuards, Query } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Body,
+  Req,
+  HttpCode,
+  Get,
+  Patch,
+  UseGuards,
+  Query,
+} from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { Request } from 'express';
 import { AuthService } from './auth.service';
 import { TwoFactorService } from './two-factor.service';
@@ -20,6 +31,7 @@ export class AuthController {
 
   @Post('login')
   @HttpCode(200)
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @ApiOperation({ summary: 'Connexion utilisateur' })
   login(@Body() dto: LoginDto, @Req() req: Request) {
     const ip = req.ip ?? req.socket.remoteAddress;
@@ -28,6 +40,7 @@ export class AuthController {
 
   @Post('2fa/verify')
   @HttpCode(200)
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @ApiOperation({ summary: 'Vérifier le code 2FA après login' })
   verify2FA(@Body() dto: Verify2FADto, @Req() req: Request) {
     const ip = req.ip ?? req.socket.remoteAddress;
@@ -60,6 +73,7 @@ export class AuthController {
 
   @Post('refresh')
   @HttpCode(200)
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
   refresh(@Body() dto: RefreshDto) {
     return this.authService.refresh(dto.refreshToken);
   }
@@ -73,7 +87,7 @@ export class AuthController {
   @Get('me')
   @UseGuards(AuthGuard('jwt'))
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Profil de l\'utilisateur connecté' })
+  @ApiOperation({ summary: "Profil de l'utilisateur connecté" })
   getMe(@CurrentUser('sub') userId: string) {
     return this.authService.getMe(userId);
   }
@@ -82,6 +96,7 @@ export class AuthController {
   @UseGuards(AuthGuard('jwt'))
   @ApiBearerAuth()
   @HttpCode(200)
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @ApiOperation({ summary: 'Changer son mot de passe' })
   changePassword(@CurrentUser('sub') userId: string, @Body() dto: ChangePasswordDto) {
     return this.authService.changePassword(userId, dto);
@@ -91,12 +106,14 @@ export class AuthController {
   @UseGuards(AuthGuard('jwt'))
   @ApiBearerAuth()
   @HttpCode(200)
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @ApiOperation({ summary: 'Déverrouiller la session après veille (mot de passe)' })
   unlockSession(@CurrentUser('sub') userId: string, @Body() dto: UnlockSessionDto) {
     return this.authService.unlockSession(userId, dto);
   }
 
   @Get('password-token/validate')
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
   @ApiOperation({ summary: 'Vérifier un lien de définition de mot de passe' })
   validatePasswordToken(@Query('token') token: string) {
     return this.authService.validatePasswordToken(token);
@@ -104,6 +121,7 @@ export class AuthController {
 
   @Post('set-password')
   @HttpCode(200)
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @ApiOperation({ summary: 'Définir le mot de passe via un lien reçu par e-mail' })
   setPassword(@Body() dto: SetPasswordDto) {
     return this.authService.setPassword(dto);

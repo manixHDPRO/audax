@@ -19,9 +19,9 @@ import {
 } from 'lucide-react';
 import { AuthGuard } from '@/components/auth/auth-guard';
 import { StatusBadge, PriorityBadge } from '@/components/ui/badge';
-import { MOCK_ROOMS } from '@/lib/mock-data';
 import { formatDate, cn } from '@/lib/utils';
 import { isApiConfigured } from '@/lib/api-config';
+import { listRoomsApi, type RoomApiRecord } from '@/lib/api-client';
 import {
   getAdminAudienceOverviewStats,
   getAdminOperationalAudiences,
@@ -43,6 +43,7 @@ export default function CommandCenterPage() {
   const syncFromApi = useAudiencesStore((s) => s.syncFromApi);
   const [time, setTime] = useState(new Date());
   const [pulse, setPulse] = useState(0);
+  const [rooms, setRooms] = useState<RoomApiRecord[]>([]);
 
   useEffect(() => {
     if (!accessToken || !isApiConfigured()) return;
@@ -59,6 +60,23 @@ export default function CommandCenterPage() {
       cancelled = true;
     };
   }, [accessToken, syncFromApi]);
+
+  useEffect(() => {
+    if (!accessToken || !isApiConfigured()) return;
+
+    let cancelled = false;
+    void listRoomsApi(accessToken)
+      .then((data) => {
+        if (!cancelled) setRooms(data);
+      })
+      .catch(() => {
+        if (!cancelled) setRooms([]);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [accessToken]);
 
   useEffect(() => {
     if (!user) return;
@@ -300,12 +318,17 @@ export default function CommandCenterPage() {
                 État des Salles
               </h2>
               <div className="space-y-4">
-                {MOCK_ROOMS.map((room) => (
+                {rooms.length === 0 ? (
+                  <p className="text-sm text-cream/40 py-6 text-center">Aucune salle configurée.</p>
+                ) : (
+                  rooms.map((room) => (
                   <div key={room.id} className="p-4 rounded-2xl bg-carbon-900/50 border border-military-800/20 hover:border-military-700/50 transition-all group">
                     <div className="flex justify-between items-start mb-3">
                       <div>
                         <p className="text-sm font-bold text-cream group-hover:text-military-300 transition-colors">{room.name}</p>
-                        <p className="text-[9px] font-mono text-military-600 uppercase tracking-widest mt-0.5">Niveau {room.floor} // SEC_ZONE_{room.id.slice(0, 2)}</p>
+                        <p className="text-[9px] font-mono text-military-600 uppercase tracking-widest mt-0.5">
+                          {room.floor ? `Niveau ${room.floor}` : 'Niveau —'} // SEC_ZONE_{room.id.slice(0, 2)}
+                        </p>
                       </div>
                       <span className={cn(
                         "text-[8px] font-mono font-bold px-2 py-0.5 rounded border uppercase tracking-widest",
@@ -325,7 +348,8 @@ export default function CommandCenterPage() {
                       <span className="text-[10px] font-mono text-cream/20">{room.capacity} PLACES</span>
                     </div>
                   </div>
-                ))}
+                  ))
+                )}
               </div>
             </div>
           </div>

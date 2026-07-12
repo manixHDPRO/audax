@@ -93,11 +93,19 @@ sleep 3
 curl -sf http://127.0.0.1:4000/api/health && echo "" || echo "API pas encore prête — voir: pm2 logs audax-api --lines 50"
 
 VPS_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+PUBLIC_HOST="${PUBLIC_HOST:-}"
 echo ""
 echo "================================================"
 echo "  DEPLOI TERMINÉ"
-echo "  Frontend : http://${VPS_IP}:3000"
-echo "  API      : http://${VPS_IP}:4000/api"
-echo "  Swagger  : http://${VPS_IP}:4000/api/docs"
+if [ -n "$PUBLIC_HOST" ]; then
+  echo "  Frontend : https://${PUBLIC_HOST}"
+  echo "  API      : https://${PUBLIC_HOST}/api"
+  echo "  TLS      : voir deploy/TLS.md"
+else
+  echo "  Frontend : http://${VPS_IP}:3000  (temporaire — configurez TLS)"
+  echo "  API      : http://${VPS_IP}:4000/api"
+  echo "  ATTENTION: HTTP en clair. Suivez deploy/TLS.md avant production."
+fi
+echo "  Swagger  : désactivé en production (ENABLE_SWAGGER=true pour forcer)"
 echo "  Logs     : pm2 logs"
 echo "================================================"

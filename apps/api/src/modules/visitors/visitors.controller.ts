@@ -25,7 +25,7 @@ export class VisitorsController {
   }
 
   @Get()
-  @RequirePermission('MANAGE_VISITORS')
+  @RequirePermission('MENU_VISITORS')
   findAll() {
     return this.visitorsService.findAll();
   }

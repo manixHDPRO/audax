@@ -1,11 +1,22 @@
-import { Controller, Get, Post, Delete, Param, Body, UseGuards, BadRequestException } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Delete,
+  Param,
+  Body,
+  UseGuards,
+  BadRequestException,
+} from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { OrgUnitsService } from './org-units.service';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { RequirePermission } from '../../common/decorators/permissions.decorator';
 
 @ApiTags('Unités Organisationnelles')
 @ApiBearerAuth()
-@UseGuards(AuthGuard('jwt'))
+@UseGuards(AuthGuard('jwt'), RolesGuard)
 @Controller('org-units')
 export class OrgUnitsController {
   constructor(private readonly orgUnitsService: OrgUnitsService) {}
@@ -23,34 +34,42 @@ export class OrgUnitsController {
   }
 
   @Post('cabinets')
+  @RequirePermission('MANAGE_USERS')
   @ApiOperation({ summary: 'Créer un nouveau cabinet' })
   createCabinet(@Body('name') name: string) {
     return this.orgUnitsService.createCabinet(name);
   }
 
   @Post('bureaus')
+  @RequirePermission('MANAGE_USERS')
   @ApiOperation({ summary: 'Créer un nouveau bureau' })
   createBureau(@Body('name') name: string) {
     return this.orgUnitsService.createBureau(name);
   }
 
   @Delete('cabinets/:id')
+  @RequirePermission('MANAGE_USERS')
   @ApiOperation({ summary: 'Supprimer un cabinet' })
   async deleteCabinet(@Param('id') id: string) {
     try {
       return await this.orgUnitsService.deleteCabinet(id);
     } catch (err) {
-      throw new BadRequestException(err instanceof Error ? err.message : 'Erreur lors de la suppression');
+      throw new BadRequestException(
+        err instanceof Error ? err.message : 'Erreur lors de la suppression',
+      );
     }
   }
 
   @Delete('bureaus/:id')
+  @RequirePermission('MANAGE_USERS')
   @ApiOperation({ summary: 'Supprimer un bureau' })
   async deleteBureau(@Param('id') id: string) {
     try {
       return await this.orgUnitsService.deleteBureau(id);
     } catch (err) {
-      throw new BadRequestException(err instanceof Error ? err.message : 'Erreur lors de la suppression');
+      throw new BadRequestException(
+        err instanceof Error ? err.message : 'Erreur lors de la suppression',
+      );
     }
   }
 }

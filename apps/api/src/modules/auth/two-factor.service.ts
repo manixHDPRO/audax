@@ -1,6 +1,5 @@
 import { Injectable, BadRequestException, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { ConfigService } from '@nestjs/config';
 import { authenticator } from 'otplib';
 import * as QRCode from 'qrcode';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -10,7 +9,6 @@ export class TwoFactorService {
   constructor(
     private prisma: PrismaService,
     private jwt: JwtService,
-    private config: ConfigService,
   ) {}
 
   async setup(userId: string) {
@@ -77,19 +75,17 @@ export class TwoFactorService {
   createTempToken(userId: string, email: string): string {
     return this.jwt.sign(
       { sub: userId, email, purpose: '2fa' },
-      {
-        secret: this.config.get('JWT_SECRET') ?? 'dev-secret',
-        expiresIn: '5m',
-      },
+      { expiresIn: '5m' },
     );
   }
 
   verifyTempToken(tempToken: string): { sub: string; email: string } {
     try {
-      const payload = this.jwt.verify(tempToken, {
-        secret: this.config.get('JWT_SECRET') ?? 'dev-secret',
-      }) as { sub: string; email: string; purpose?: string };
-
+      const payload = this.jwt.verify(tempToken) as {
+        sub: string;
+        email: string;
+        purpose?: string;
+      };
       if (payload.purpose !== '2fa') throw new Error('Invalid purpose');
       return { sub: payload.sub, email: payload.email };
     } catch {

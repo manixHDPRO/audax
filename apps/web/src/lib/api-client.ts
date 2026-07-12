@@ -429,6 +429,7 @@ export interface VisitorApiRecord {
   function?: string | null;
   email?: string | null;
   phone?: string | null;
+  accessLevel?: string | null;
   badgeCode?: string | null;
   createdAt?: string;
 }
@@ -450,8 +451,43 @@ export async function createVisitorApi(token: string, payload: CreateVisitorPayl
   });
 }
 
+export async function listVisitorsApi(token: string) {
+  return apiFetch<VisitorApiRecord[]>('/visitors', { token });
+}
+
 export async function listPreRegisteredVisitorsTodayApi(token: string) {
   return apiFetch<VisitorApiRecord[]>('/visitors/pre-registered-today', { token });
+}
+
+export interface RoomApiRecord {
+  id: string;
+  name: string;
+  capacity: number;
+  floor?: string | null;
+  status: 'LIBRE' | 'OCCUPEE' | 'RESERVEE' | 'MAINTENANCE';
+}
+
+export async function listRoomsApi(token: string) {
+  return apiFetch<RoomApiRecord[]>('/rooms', { token });
+}
+
+export interface DashboardReportsResponse {
+  stats: {
+    EN_ATTENTE: number;
+    EN_ANALYSE: number;
+    VALIDEE: number;
+    REJETEE: number;
+    PLANIFIEE: number;
+    TERMINEE: number;
+  };
+  total: number;
+  validationRate: number;
+  byCategory: { name: string; value: number }[];
+  byMonth: { month: string; audiences: number; validees: number }[];
+}
+
+export async function getDashboardReportsApi(token: string) {
+  return apiFetch<DashboardReportsResponse>('/dashboard/reports', { token });
 }
 
 export interface VisitTargetUser {

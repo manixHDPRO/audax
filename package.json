@@ -23,9 +23,13 @@
     "docker:db": "docker compose up -d postgres",
     "docker:down": "docker compose down",
     "db:local": "npm run docker:db && npm run db:migrate && npm run db:seed",
-    "deploy:vps": "powershell -ExecutionPolicy Bypass -File scripts/deploy-vps.ps1"
+    "deploy:vps": "powershell -ExecutionPolicy Bypass -File scripts/deploy-vps.ps1",
+    "smoke": "node scripts/smoke-test.mjs",
+    "smoke:ui": "node scripts/smoke-ui.mjs",
+    "smoke:all": "node scripts/smoke-test.mjs && node scripts/smoke-ui.mjs"
   },
   "devDependencies": {
-    "concurrently": "^9.1.2"
+    "concurrently": "^9.1.2",
+    "playwright": "1.52.0"
   }
 }

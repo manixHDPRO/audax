@@ -6,7 +6,6 @@ import type { Audience, Priority, Confidentiality, VisitMode, AccompaniedPerson,
 import { nextAudienceReference, mapApiAudience } from '@/lib/audience-utils';
 import { getAudienceApi, listAudiencesApi, listMyTodayAudiencesApi } from '@/lib/api-client';
 import { API_UNAVAILABLE_MESSAGE } from '@/lib/api-config';
-import { MOCK_AUDIENCES } from '@/lib/mock-data';
 
 export interface CreateAudienceInput {
   subject: string;

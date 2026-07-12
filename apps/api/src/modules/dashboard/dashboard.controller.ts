@@ -22,6 +22,16 @@ export class DashboardController {
     });
   }
 
+  @Get('reports')
+  getReports(@CurrentUser() user: JwtPayload) {
+    return this.dashboardService.getReports({
+      id: user.sub,
+      role: user.role as UserRole,
+      cabinetId: user.cabinetId,
+      bureauId: user.bureauId,
+    });
+  }
+
   @Get('activity')
   getActivity(@CurrentUser() user: JwtPayload) {
     return this.dashboardService.getRecentActivity({
