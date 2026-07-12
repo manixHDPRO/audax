@@ -7,13 +7,19 @@ import { useAuthStore } from '@/stores/auth-store';
 export function AuthGuard({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuthStore();
   const router = useRouter();
-  const [hydrated, setHydrated] = useState(() => useAuthStore.persist.hasHydrated());
+  const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
-    const unsub = useAuthStore.persist.onFinishHydration(() => {
+    const persist = useAuthStore.persist;
+    if (!persist?.hasHydrated || !persist.onFinishHydration) {
+      setHydrated(true);
+      return;
+    }
+
+    const unsub = persist.onFinishHydration(() => {
       setHydrated(true);
     });
-    if (useAuthStore.persist.hasHydrated()) {
+    if (persist.hasHydrated()) {
       setHydrated(true);
     }
     return unsub;
