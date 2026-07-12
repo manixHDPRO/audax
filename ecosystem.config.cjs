@@ -17,10 +17,10 @@ module.exports = {
     {
       name: 'audax-web',
       cwd: './apps/web',
-      // next est hoisté à la racine du monorepo, pas dans apps/web/node_modules
-      script: '../../node_modules/.bin/next',
+      // PM2 ne doit pas exécuter le wrapper shell .bin/next (interpreter: none).
+      script: '../../node_modules/next/dist/bin/next',
       args: 'start -p 3000 -H 0.0.0.0',
-      interpreter: 'none',
+      interpreter: 'node',
       exec_mode: 'fork',
       instances: 1,
       autorestart: true,
