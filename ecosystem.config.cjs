@@ -1,4 +1,6 @@
 /** PM2 — déploiement VPS sans Docker (monorepo npm workspaces) */
+const webPort = Number(process.env.AUDAX_WEB_PORT || 3001);
+
 module.exports = {
   apps: [
     {
@@ -19,7 +21,7 @@ module.exports = {
       cwd: './apps/web',
       // PM2 ne doit pas exécuter le wrapper shell .bin/next (interpreter: none).
       script: '../../node_modules/next/dist/bin/next',
-      args: 'start -p 3000 -H 0.0.0.0',
+      args: `start -p ${webPort} -H 0.0.0.0`,
       interpreter: 'node',
       exec_mode: 'fork',
       instances: 1,
@@ -27,7 +29,7 @@ module.exports = {
       max_memory_restart: '512M',
       env: {
         NODE_ENV: 'production',
-        PORT: 3000,
+        PORT: webPort,
       },
     },
   ],
