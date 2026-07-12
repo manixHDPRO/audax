@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { AuthGuard } from '@/components/auth/auth-guard';
 import { Card, CardHeader, CardTitle } from '@/components/ui/card';
 import { ChangePasswordForm, TwoFactorStatus } from '@/components/profile/profile-sections';
+import { ThemeSettings } from '@/components/settings/theme-settings';
 import { useAuthStore } from '@/stores/auth-store';
 import { ROLE_LABELS, type User } from '@/types';
 
@@ -93,6 +94,8 @@ export default function ProfilePage() {
             </dl>
           )}
         </Card>
+
+        <ThemeSettings />
 
         <ChangePasswordForm />
       </div>

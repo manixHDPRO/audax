@@ -21,6 +21,7 @@ import {
   notifyAudienceReadyForAccompaniment,
   notifyCemgOnProtocolCabinetForward,
   notifyProtocolOnCemgValidation,
+  notifyProtocolOnRequesterPresenceConfirmed,
   notifySalleOnProtocolFollowUp,
   notifySalleOnProtocolCemgAction,
 } from '../../common/audience-notifications';
@@ -29,6 +30,14 @@ import {
   NotificationSoundType,
 } from '../notifications/notification-stream.service';
 import { hiddenSuperAdminUserFilter, isPlatformAdmin } from '../../common/super-admin-access';
+import {
+  getLastHistoryTimestamp,
+  isTimestampOnDay,
+  needsRequesterPresenceConfirmation,
+  needsSalleAccompanimentAgain,
+  PRESENCE_CONFIRMED_PREFIX,
+  RESCHEDULE_HISTORY_PREFIX,
+} from '../../common/audience-salle-access';
 
 const visitTargetListSelect = {
   id: true,
@@ -82,14 +91,29 @@ export class AudiencesService {
     return { start, end };
   }
 
-  /** Liste réduite pour la salle d'attente : ses enregistrements du jour, sans statut ni suivi. */
-  async findMyTodayForWaitingRoom(userId: string) {
+  /** Agenda du jour pour la salle d'attente : enregistrements, planifiées et reprogrammées aujourd'hui. */
+  async findMyTodayForWaitingRoom(user: UserContext) {
     const { start, end } = this.getTodayBounds();
+    const scope = accompanimentPendingWhereForRole(user);
+
     const rows = await this.prisma.audience.findMany({
       where: {
-        createdById: userId,
-        createdAt: { gte: start, lt: end },
-        status: { not: AudienceStatus.TERMINEE },
+        ...scope,
+        status: {
+          notIn: [AudienceStatus.TERMINEE, AudienceStatus.ARCHIVEE, AudienceStatus.REJETEE],
+        },
+        OR: [
+          { createdAt: { gte: start, lt: end } },
+          { scheduledAt: { gte: start, lt: end } },
+          {
+            statusHistory: {
+              some: {
+                comment: { startsWith: RESCHEDULE_HISTORY_PREFIX },
+                createdAt: { gte: start, lt: end },
+              },
+            },
+          },
+        ],
       },
       select: {
         id: true,
@@ -98,7 +122,15 @@ export class AudiencesService {
         requesterName: true,
         category: true,
         priority: true,
+        status: true,
+        scheduledAt: true,
         createdAt: true,
+        statusHistory: {
+          where: { comment: { startsWith: RESCHEDULE_HISTORY_PREFIX } },
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+          select: { createdAt: true },
+        },
         visitors: {
           where: { isPrimary: true },
           take: 1,
@@ -115,11 +147,12 @@ export class AudiencesService {
           },
         },
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ scheduledAt: 'asc' }, { createdAt: 'desc' }],
     });
 
     return rows.map((row) => {
       const primary = row.visitors[0]?.visitor;
+      const lastReschedule = row.statusHistory[0]?.createdAt ?? null;
       return {
         id: row.id,
         reference: row.reference,
@@ -127,7 +160,12 @@ export class AudiencesService {
         requesterName: row.requesterName,
         category: row.category,
         priority: row.priority,
+        status: row.status,
+        scheduledAt: row.scheduledAt,
         createdAt: row.createdAt,
+        rescheduledToday: lastReschedule
+          ? isTimestampOnDay(lastReschedule, start, end)
+          : false,
         visitor: primary
           ? {
               id: primary.id,
@@ -183,6 +221,9 @@ export class AudiencesService {
       select: {
         requesterName: true,
         requesterOrg: true,
+        requesterPhone: true,
+        requesterAddress: true,
+        subject: true,
         category: true,
         motive: true,
         createdAt: true,
@@ -196,6 +237,9 @@ export class AudiencesService {
     const requesters: {
       requesterName: string;
       requesterOrg: string | null;
+      requesterPhone: string | null;
+      requesterAddress: string | null;
+      subject: string;
       category: string;
       motive: string;
       lastAudienceAt: Date;
@@ -209,6 +253,9 @@ export class AudiencesService {
       requesters.push({
         requesterName: row.requesterName,
         requesterOrg: row.requesterOrg,
+        requesterPhone: row.requesterPhone,
+        requesterAddress: row.requesterAddress,
+        subject: row.subject,
         category: row.category,
         motive: row.motive,
         lastAudienceAt: row.createdAt,
@@ -283,7 +330,7 @@ export class AudiencesService {
         validations: { include: { validator: { select: { firstName: true, lastName: true, role: true } } } },
         statusHistory: {
           orderBy: { createdAt: 'desc' },
-          take: 5,
+          take: 30,
           select: {
             id: true,
             fromStatus: true,
@@ -364,6 +411,8 @@ export class AudiencesService {
         motive: dto.motive,
         requesterName: dto.requesterName,
         requesterOrg: dto.requesterOrg,
+        requesterPhone: dto.requesterPhone?.trim() || null,
+        requesterAddress: dto.requesterAddress?.trim() || null,
         requesterGrade: dto.requesterGrade?.trim() || null,
         priority: dto.priority,
         confidentiality: dto.confidentiality,
@@ -803,15 +852,11 @@ export class AudiencesService {
 
   async findAccompanimentPending(user: UserContext) {
     const scope = accompanimentPendingWhereForRole(user);
+    const { start, end } = this.getTodayBounds();
     const rows = await this.prisma.audience.findMany({
       where: {
         ...scope,
-        status: { in: [AudienceStatus.CONFIRMEE] },
-        NOT: {
-          statusHistory: {
-            some: { comment: { startsWith: 'Accompagné au bureau' } },
-          },
-        },
+        status: { in: [AudienceStatus.CONFIRMEE, AudienceStatus.PLANIFIEE] },
       },
       select: {
         id: true,
@@ -829,34 +874,59 @@ export class AudiencesService {
         },
         room: { select: { id: true, name: true, floor: true } },
         statusHistory: {
-          where: {
-            toStatus: {
-              in: [AudienceStatus.VALIDEE, AudienceStatus.PLANIFIEE, AudienceStatus.CONFIRMEE],
-            },
-          },
           orderBy: { createdAt: 'desc' },
-          take: 1,
-          select: { createdAt: true, toStatus: true },
+          take: 40,
+          select: { comment: true, createdAt: true, toStatus: true },
         },
       },
-      orderBy: [{ priority: 'desc' }, { createdAt: 'asc' }],
+      orderBy: [{ priority: 'desc' }, { scheduledAt: 'asc' }, { createdAt: 'asc' }],
     });
 
-    return rows.map((row) => ({
-      id: row.id,
-      reference: row.reference,
-      subject: row.subject,
-      requesterName: row.requesterName,
-      requesterOrg: row.requesterOrg,
-      status: row.status,
-      priority: row.priority,
-      category: row.category,
-      scheduledAt: row.scheduledAt,
-      createdAt: row.createdAt,
-      validatedAt: row.statusHistory[0]?.createdAt ?? row.createdAt,
-      visitTarget: row.visitTarget,
-      room: row.room,
-    }));
+    const eligible = rows.filter((row) => {
+      if (!needsSalleAccompanimentAgain(row.statusHistory)) return false;
+
+      if (row.status === AudienceStatus.PLANIFIEE) {
+        if (!row.scheduledAt) return false;
+        return isTimestampOnDay(row.scheduledAt, start, end);
+      }
+
+      if (row.status === AudienceStatus.CONFIRMEE) {
+        if (row.scheduledAt && !isTimestampOnDay(row.scheduledAt, start, end)) {
+          return false;
+        }
+        return true;
+      }
+
+      return false;
+    });
+
+    return eligible.map((row) => {
+      const lastReschedule = getLastHistoryTimestamp(row.statusHistory, RESCHEDULE_HISTORY_PREFIX);
+      const validationEntry = row.statusHistory.find(
+        (entry) =>
+          entry.toStatus === AudienceStatus.VALIDEE ||
+          entry.toStatus === AudienceStatus.PLANIFIEE ||
+          entry.toStatus === AudienceStatus.CONFIRMEE,
+      );
+
+      return {
+        id: row.id,
+        reference: row.reference,
+        subject: row.subject,
+        requesterName: row.requesterName,
+        requesterOrg: row.requesterOrg,
+        status: row.status,
+        priority: row.priority,
+        category: row.category,
+        scheduledAt: row.scheduledAt,
+        createdAt: row.createdAt,
+        validatedAt: validationEntry?.createdAt ?? row.createdAt,
+        rescheduledAt: lastReschedule,
+        awaitingProtocolConfirmation: row.status === AudienceStatus.PLANIFIEE,
+        visitTarget: row.visitTarget,
+        room: row.room,
+      };
+    });
   }
 
   async completeAccompaniment(
@@ -869,6 +939,11 @@ export class AudiencesService {
       include: {
         visitTarget: { select: { firstName: true, lastName: true } },
         room: { select: { name: true, floor: true } },
+        statusHistory: {
+          orderBy: { createdAt: 'desc' },
+          take: 40,
+          select: { comment: true, createdAt: true },
+        },
       },
     });
     if (!audience) throw new NotFoundException('Audience introuvable');
@@ -879,13 +954,7 @@ export class AudiencesService {
       );
     }
 
-    const alreadyAccompanied = await this.prisma.audienceStatusHistory.findFirst({
-      where: {
-        audienceId: id,
-        comment: { startsWith: 'Accompagné au bureau' },
-      },
-    });
-    if (alreadyAccompanied) {
+    if (!needsSalleAccompanimentAgain(audience.statusHistory)) {
       throw new BadRequestException('Cette audience a déjà été accompagnée au bureau');
     }
 
@@ -909,6 +978,127 @@ export class AudiencesService {
         changedBy: userId,
         comment,
       },
+    });
+
+    return { success: true, comment };
+  }
+
+  async findPresencePendingForWaitingRoom(user: UserContext) {
+    const scope = accompanimentPendingWhereForRole(user);
+    const rows = await this.prisma.audience.findMany({
+      where: {
+        ...scope,
+        status: AudienceStatus.EN_ATTENTE,
+        statusHistory: {
+          some: { comment: { startsWith: RESCHEDULE_HISTORY_PREFIX } },
+        },
+      },
+      select: {
+        id: true,
+        reference: true,
+        subject: true,
+        requesterName: true,
+        requesterOrg: true,
+        status: true,
+        priority: true,
+        category: true,
+        scheduledAt: true,
+        createdAt: true,
+        visitTarget: {
+          select: { id: true, firstName: true, lastName: true, role: true },
+        },
+        statusHistory: {
+          orderBy: { createdAt: 'desc' },
+          take: 40,
+          select: { comment: true, createdAt: true },
+        },
+      },
+      orderBy: [{ priority: 'desc' }, { scheduledAt: 'asc' }, { createdAt: 'asc' }],
+    });
+
+    return rows
+      .filter((row) => needsRequesterPresenceConfirmation(row.statusHistory))
+      .map((row) => {
+        const lastReschedule = getLastHistoryTimestamp(row.statusHistory, RESCHEDULE_HISTORY_PREFIX);
+        return {
+          id: row.id,
+          reference: row.reference,
+          subject: row.subject,
+          requesterName: row.requesterName,
+          requesterOrg: row.requesterOrg,
+          status: row.status,
+          priority: row.priority,
+          category: row.category,
+          scheduledAt: row.scheduledAt,
+          createdAt: row.createdAt,
+          rescheduledAt: lastReschedule,
+          visitTarget: row.visitTarget,
+        };
+      });
+  }
+
+  async confirmRequesterPresence(
+    id: string,
+    userId: string,
+    dto?: { comment?: string },
+  ) {
+    const audience = await this.prisma.audience.findUnique({
+      where: { id },
+      include: {
+        visitTarget: { select: { role: true } },
+        statusHistory: {
+          orderBy: { createdAt: 'desc' },
+          take: 40,
+          select: { comment: true, createdAt: true },
+        },
+      },
+    });
+    if (!audience) throw new NotFoundException('Audience introuvable');
+
+    if (audience.status !== AudienceStatus.EN_ATTENTE) {
+      throw new BadRequestException(
+        'Seules les audiences en attente peuvent recevoir une confirmation de présence',
+      );
+    }
+
+    if (!needsRequesterPresenceConfirmation(audience.statusHistory)) {
+      throw new BadRequestException(
+        'Cette audience ne nécessite pas de confirmation de présence ou la présence est déjà confirmée',
+      );
+    }
+
+    if (!isCemgRelatedAudience(audience)) {
+      throw new BadRequestException(
+        'La confirmation de présence concerne uniquement les audiences reprogrammées du circuit CEMG',
+      );
+    }
+
+    const comment =
+      dto?.comment?.trim() ||
+      `${PRESENCE_CONFIRMED_PREFIX} ${audience.requesterName} présent en salle d'attente`;
+
+    await this.prisma.audienceStatusHistory.create({
+      data: {
+        audienceId: id,
+        fromStatus: audience.status,
+        toStatus: audience.status,
+        changedBy: userId,
+        comment,
+      },
+    });
+
+    const protocolRecipients = await notifyProtocolOnRequesterPresenceConfirmed(this.prisma, {
+      id: audience.id,
+      reference: audience.reference,
+      subject: audience.subject,
+      requesterName: audience.requesterName,
+      visitTargetUserId: audience.visitTargetUserId,
+    });
+    this.pushLiveAlerts(protocolRecipients, {
+      type: 'WARNING',
+      title: 'Présence confirmée — audience reprogrammée',
+      message: `${audience.reference} — ${audience.requesterName}`,
+      audienceId: id,
     });
 
     return { success: true, comment };

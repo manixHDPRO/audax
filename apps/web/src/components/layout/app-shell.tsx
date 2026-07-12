@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -41,6 +41,12 @@ import { unlockNotificationAudio } from '@/lib/notification-sounds';
 import { useNotificationAlerts } from '@/hooks/use-notification-alerts';
 import { useChatUnreadCount } from '@/hooks/use-chat';
 import { subscribeAudienceSync } from '@/lib/audience-sync-bus';
+import { getSystemSecuritySettingsApi, type SystemSecuritySettings } from '@/lib/api-client';
+import {
+  subscribeSystemSecurityUpdated,
+} from '@/lib/system-security';
+import { useInactivityLock } from '@/hooks/use-inactivity-lock';
+import { InactivityLockOverlay } from '@/components/auth/inactivity-lock-overlay';
 import { ROLE_LABELS } from '@/types';
 
 interface NavItem {
@@ -56,7 +62,9 @@ function isWaitingRoomPath(pathname: string) {
     pathname === '/audiences' ||
     pathname === '/audiences/new' ||
     pathname === '/messages' ||
-    pathname === '/profile'
+    pathname === '/profile' ||
+    pathname === '/settings' ||
+    pathname.startsWith('/settings?')
   );
 }
 
@@ -426,6 +434,26 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const clearAllAudiences = useAudiencesStore((s) => s.clearAllAudiences);
   const [orbitalOpen, setOrbitalOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [securitySettings, setSecuritySettings] = useState<SystemSecuritySettings>({
+    inactivityLockEnabled: false,
+    inactivityTimeoutMinutes: 15,
+  });
+
+  const loadSecuritySettings = useCallback(async () => {
+    if (!accessToken || !isApiConfigured()) return;
+    try {
+      const settings = await getSystemSecuritySettingsApi(accessToken);
+      setSecuritySettings(settings);
+    } catch {
+      // Conserver les derniers paramètres connus
+    }
+  }, [accessToken]);
+
+  const { isLocked, unlock } = useInactivityLock({
+    enabled: isAuthenticated && securitySettings.inactivityLockEnabled,
+    timeoutMinutes: securitySettings.inactivityTimeoutMinutes,
+  });
+
   const { unreadCount: unreadNotifications } = useNotificationAlerts({
     accessToken,
     userId: user?.id,
@@ -445,6 +473,26 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       window.removeEventListener('keydown', unlock);
     };
   }, []);
+
+  useEffect(() => {
+    if (!isAuthenticated || !accessToken || !isApiConfigured()) return;
+    void loadSecuritySettings();
+  }, [isAuthenticated, accessToken, loadSecuritySettings]);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    return subscribeSystemSecurityUpdated((settings) => {
+      setSecuritySettings(settings);
+    });
+  }, [isAuthenticated]);
+
+  useEffect(() => {
+    if (!isAuthenticated || !accessToken || !isApiConfigured()) return;
+    const interval = setInterval(() => {
+      void loadSecuritySettings();
+    }, 120_000);
+    return () => clearInterval(interval);
+  }, [isAuthenticated, accessToken, loadSecuritySettings]);
 
   useEffect(() => {
     if (!isAuthenticated || !accessToken || !isApiConfigured()) return;
@@ -482,7 +530,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     if (!receivesLiveAccompanimentUpdates(user?.role)) return;
 
     const unsubscribe = subscribeAudienceSync((event) => {
-      if (event.type === 'confirmed' || event.type === 'accompaniment-completed') {
+      if (event.type === 'confirmed' || event.type === 'accompaniment-completed' || event.type === 'presence-confirmed') {
         void syncWaitingRoomToday(accessToken);
       }
     });
@@ -503,6 +551,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         event.type === 'reception-completed' ||
         event.type === 'confirmed' ||
         event.type === 'accompaniment-completed' ||
+        event.type === 'presence-confirmed' ||
         event.type === 'updated'
       ) {
         void syncFromApi(accessToken, { silent: true });
@@ -559,6 +608,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </>
         )}
       </div>
+
+      {isAuthenticated && isLocked ? <InactivityLockOverlay onUnlock={unlock} /> : null}
     </div>
   );
 }

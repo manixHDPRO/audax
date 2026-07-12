@@ -549,7 +549,9 @@ export default function AudienceDetailPage({ params }: { params: Promise<{ id: s
               <div><dt className="text-cream/40">Personne à voir</dt><dd>{displayAudience.visitTarget ? `${displayAudience.visitTarget.firstName} ${displayAudience.visitTarget.lastName}` : '—'}</dd></div>
               <div><dt className="text-cream/40">Nom</dt><dd>{displayAudience.requesterName}</dd></div>
               <div><dt className="text-cream/40">Fonction</dt><dd>{displayAudience.visitorFunction ?? displayAudience.requesterOrg ?? '—'}</dd></div>
-              <div><dt className="text-cream/40">Objet</dt><dd>{displayAudience.subject}</dd></div>
+              <div><dt className="text-cream/40">Téléphone</dt><dd>{displayAudience.requesterPhone ?? '—'}</dd></div>
+              <div><dt className="text-cream/40">Adresse</dt><dd>{displayAudience.requesterAddress ?? '—'}</dd></div>
+              <div><dt className="text-cream/40">Motif d&apos;audience</dt><dd>{displayAudience.subject}</dd></div>
               <div><dt className="text-cream/40">Priorité</dt><dd>{PRIORITY_LABELS[displayAudience.priority]}</dd></div>
               <div><dt className="text-cream/40">Confidentialité</dt><dd>{CONFIDENTIALITY_LABELS[displayAudience.confidentiality]}</dd></div>
               <div><dt className="text-cream/40">Créée le</dt><dd>{formatDate(displayAudience.createdAt)}</dd></div>

@@ -2,20 +2,32 @@
 
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { BellRing, Clock, Navigation, UserCheck, ClipboardList } from 'lucide-react';
+import { BellRing, Clock, Navigation, UserCheck, ClipboardList, UserRoundCheck } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { PRIORITY_LABELS, ROLE_LABELS, type UserRole, type WaitingRoomAudienceEntry } from '@/types';
+import { PRIORITY_LABELS, ROLE_LABELS, STATUS_LABELS, type UserRole, type WaitingRoomAudienceEntry } from '@/types';
 import type {
   AccompanimentPendingApiRecord,
+  PresencePendingApiRecord,
   ReceptionPendingApiRecord,
 } from '@/lib/api-client';
 
-type WaitingRoomTabId = 'accompany' | 'reception' | 'registrations';
+type WaitingRoomTabId = 'accompany' | 'presence' | 'reception' | 'registrations';
 
 function formatTime(iso: string) {
   return new Date(iso).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+}
+
+function formatScheduledAt(iso?: string | null) {
+  if (!iso) return null;
+  return new Date(iso).toLocaleString('fr-FR', {
+    weekday: 'short',
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }
 
 function formatBureau(aud: AccompanimentPendingApiRecord) {
@@ -56,6 +68,11 @@ export interface WaitingRoomViewProps {
   accompanimentError: string;
   accompanyingId: string | null;
   onCompleteAccompaniment: (audienceId: string) => void;
+  presencePending: PresencePendingApiRecord[];
+  loadingPresence: boolean;
+  presenceError: string;
+  confirmingPresenceId: string | null;
+  onConfirmPresence: (audienceId: string) => void;
   receptionsPending: ReceptionPendingApiRecord[];
   loadingReceptions: boolean;
   receptionError: string;
@@ -75,6 +92,11 @@ export function WaitingRoomView({
   accompanimentError,
   accompanyingId,
   onCompleteAccompaniment,
+  presencePending,
+  loadingPresence,
+  presenceError,
+  confirmingPresenceId,
+  onConfirmPresence,
   receptionsPending,
   loadingReceptions,
   receptionError,
@@ -101,12 +123,24 @@ export function WaitingRoomView({
       id: 'accompany',
       label: 'À accompagner',
       description:
-        'Audiences confirmées — accompagnez le demandeur jusqu\'au bureau puis confirmez l\'accompagnement',
+        'Audiences confirmées ou reprogrammées aujourd\'hui — annoncez et accompagnez le demandeur au bureau',
       count: accompanimentPending.length,
       borderClass: 'border-gold-500/20',
       accentClass: 'text-gold-400',
       dotClass: 'bg-gold-500',
       badgeClass: 'text-gold-500/60',
+      visible: canAccompany,
+    },
+    {
+      id: 'presence',
+      label: 'Confirmer la présence',
+      description:
+        'Audiences reprogrammées — confirmez la présence du demandeur pour débloquer la transmission au Cabinet',
+      count: presencePending.length,
+      borderClass: 'border-purple-500/20',
+      accentClass: 'text-purple-300',
+      dotClass: 'bg-purple-500',
+      badgeClass: 'text-purple-400/60',
       visible: canAccompany,
     },
     {
@@ -124,7 +158,7 @@ export function WaitingRoomView({
     {
       id: 'registrations',
       label: 'Enregistrements du jour',
-      description: 'Demandes enregistrées aujourd\'hui à la salle d\'attente',
+      description: 'Demandes du jour, audiences planifiées ou reprogrammées pour aujourd\'hui',
       count: waitingRoomToday.length,
       borderClass: 'border-military-600/20',
       accentClass: 'text-cream/80',
@@ -156,6 +190,15 @@ export function WaitingRoomView({
       visible: canAccompany,
     },
     {
+      label: 'Présence',
+      value: presencePending.length,
+      icon: UserRoundCheck,
+      tone: 'text-purple-300',
+      glow: presencePending.length > 0,
+      tab: 'presence',
+      visible: canAccompany,
+    },
+    {
       label: 'Réception',
       value: receptionsPending.length,
       icon: UserCheck,
@@ -174,6 +217,14 @@ export function WaitingRoomView({
     },
   ];
 
+  const visibleStats = statCards.filter((s) => s.visible);
+  const statGridCols: Record<number, string> = {
+    1: 'grid-cols-1',
+    2: 'grid-cols-2',
+    3: 'grid-cols-3',
+    4: 'grid-cols-4',
+  };
+
   const renderTabContent = () => {
     switch (activeTab) {
       case 'accompany':
@@ -188,11 +239,14 @@ export function WaitingRoomView({
             {loadingAccompaniment && accompanimentPending.length === 0 ? (
               <p className="text-sm text-cream/40 text-center py-6">Chargement…</p>
             ) : accompanimentPending.length === 0 ? (
-              renderEmptyState('Aucune audience confirmée en attente d\'accompagnement')
+              renderEmptyState('Aucune audience à annoncer ou à accompagner')
             ) : (
               <div className="space-y-2">
                 {accompanimentPending.map((aud) => {
                   const bureau = formatBureau(aud);
+                  const scheduledLabel = formatScheduledAt(aud.scheduledAt);
+                  const isRescheduled = Boolean(aud.rescheduledAt);
+                  const awaitingConfirm = aud.awaitingProtocolConfirmation;
                   return (
                     <Card
                       key={aud.id}
@@ -203,6 +257,9 @@ export function WaitingRoomView({
                         <div className="flex-1 min-w-[200px]">
                           <p className="font-semibold text-cream">{aud.requesterName}</p>
                           <p className="text-xs text-cream/45 mt-0.5 line-clamp-1">{aud.subject}</p>
+                          {scheduledLabel ? (
+                            <p className="text-[11px] text-gold-300/80 mt-1">Créneau : {scheduledLabel}</p>
+                          ) : null}
                           <div className="mt-2 flex items-start gap-2 text-sm text-military-300">
                             <Navigation className="w-4 h-4 shrink-0 mt-0.5 text-gold-400" />
                             <div>
@@ -216,23 +273,102 @@ export function WaitingRoomView({
                             </div>
                           </div>
                         </div>
-                        {aud.priority === 'PRIORITE_0' || aud.priority === 'CRITIQUE' ? (
-                          <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded border border-amber-600/40 text-amber-300 shrink-0">
-                            {PRIORITY_LABELS[aud.priority as keyof typeof PRIORITY_LABELS]}
-                          </span>
-                        ) : null}
-                        <div className="flex flex-col items-end gap-2 shrink-0">
+                        <div className="flex flex-col items-end gap-1.5 shrink-0">
+                          {isRescheduled ? (
+                            <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded border border-purple-600/40 text-purple-300">
+                              Reprogrammée
+                            </span>
+                          ) : null}
+                          {awaitingConfirm ? (
+                            <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded border border-amber-600/40 text-amber-300">
+                              Attente confirmation Protocol
+                            </span>
+                          ) : null}
+                          {aud.priority === 'PRIORITE_0' || aud.priority === 'CRITIQUE' ? (
+                            <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded border border-amber-600/40 text-amber-300 shrink-0">
+                              {PRIORITY_LABELS[aud.priority as keyof typeof PRIORITY_LABELS]}
+                            </span>
+                          ) : null}
+                        </div>
+                        <div className="flex flex-col items-end gap-2 shrink-0 w-full sm:w-auto">
                           <span className="text-[10px] text-cream/35">
-                            Confirmée à {formatTime(aud.validatedAt)}
+                            {awaitingConfirm
+                              ? `Planifiée — ${STATUS_LABELS.PLANIFIEE}`
+                              : `Confirmée à ${formatTime(aud.validatedAt)}`}
                           </span>
                           <Button
                             size="sm"
                             variant="gold"
-                            disabled={accompanyingId === aud.id}
+                            disabled={awaitingConfirm || accompanyingId === aud.id}
                             onClick={() => onCompleteAccompaniment(aud.id)}
                           >
                             <Navigation className="w-3.5 h-3.5" />
                             {accompanyingId === aud.id ? '…' : 'Accompagné au bureau'}
+                          </Button>
+                        </div>
+                      </div>
+                    </Card>
+                  );
+                })}
+              </div>
+            )}
+          </>
+        );
+
+      case 'presence':
+        if (!canAccompany) return null;
+        return (
+          <>
+            {presenceError ? (
+              <p className="text-sm text-red-400 mb-3 rounded-lg border border-red-900/40 bg-red-950/30 px-3 py-2">
+                {presenceError}
+              </p>
+            ) : null}
+            {loadingPresence && presencePending.length === 0 ? (
+              <p className="text-sm text-cream/40 text-center py-6">Chargement…</p>
+            ) : presencePending.length === 0 ? (
+              renderEmptyState('Aucune audience reprogrammée en attente de confirmation de présence')
+            ) : (
+              <div className="space-y-2">
+                {presencePending.map((aud) => {
+                  const scheduledLabel = formatScheduledAt(aud.scheduledAt);
+                  const rescheduleLabel = aud.rescheduledAt
+                    ? formatScheduledAt(
+                        typeof aud.rescheduledAt === 'string'
+                          ? aud.rescheduledAt
+                          : aud.rescheduledAt.toISOString(),
+                      )
+                    : null;
+                  return (
+                    <Card
+                      key={aud.id}
+                      className="!p-4 border-purple-600/40 bg-purple-950/20 ring-1 ring-purple-500/10"
+                    >
+                      <div className="flex flex-wrap items-start gap-4">
+                        <div className="font-mono text-sm text-purple-300 w-36 shrink-0">{aud.reference}</div>
+                        <div className="flex-1 min-w-[200px]">
+                          <p className="font-semibold text-cream">{aud.requesterName}</p>
+                          <p className="text-xs text-cream/45 mt-0.5 line-clamp-1">{aud.subject}</p>
+                          {rescheduleLabel ? (
+                            <p className="text-[11px] text-purple-300/80 mt-1">Reprogrammée : {rescheduleLabel}</p>
+                          ) : null}
+                          {scheduledLabel ? (
+                            <p className="text-[11px] text-gold-300/80 mt-1">Créneau : {scheduledLabel}</p>
+                          ) : null}
+                        </div>
+                        <div className="flex flex-col items-end gap-2 shrink-0 w-full sm:w-auto">
+                          <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded border border-purple-600/40 text-purple-300">
+                            Reprogrammée
+                          </span>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="border-purple-500/30 text-purple-200 hover:bg-purple-500/10"
+                            disabled={confirmingPresenceId === aud.id}
+                            onClick={() => onConfirmPresence(aud.id)}
+                          >
+                            <UserRoundCheck className="w-3.5 h-3.5" />
+                            {confirmingPresenceId === aud.id ? '…' : 'Confirmer la présence'}
                           </Button>
                         </div>
                       </div>
@@ -313,7 +449,9 @@ export function WaitingRoomView({
         }
         return (
           <div className="space-y-2">
-            {waitingRoomToday.map((aud, i) => (
+            {waitingRoomToday.map((aud, i) => {
+              const scheduledLabel = formatScheduledAt(aud.scheduledAt);
+              return (
               <motion.div
                 key={aud.id}
                 initial={{ opacity: 0, x: -10 }}
@@ -326,12 +464,27 @@ export function WaitingRoomView({
                     <div className="flex-1 min-w-[200px]">
                       <p className="font-medium">{aud.subject}</p>
                       <p className="text-xs text-cream/40">{aud.requesterName}</p>
+                      {scheduledLabel ? (
+                        <p className="text-[11px] text-gold-300/70 mt-1">Créneau : {scheduledLabel}</p>
+                      ) : null}
                     </div>
-                    {aud.priority === 'PRIORITE_0' ? (
-                      <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded border border-carbon-600/50 text-cream/50 shrink-0">
-                        {PRIORITY_LABELS.PRIORITE_0}
-                      </span>
-                    ) : null}
+                    <div className="flex flex-wrap items-center gap-2 shrink-0">
+                      {aud.rescheduledToday ? (
+                        <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded border border-purple-600/40 text-purple-300">
+                          Reprogrammée
+                        </span>
+                      ) : null}
+                      {aud.status && aud.status in STATUS_LABELS ? (
+                        <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded border border-carbon-600/50 text-cream/50">
+                          {STATUS_LABELS[aud.status as keyof typeof STATUS_LABELS]}
+                        </span>
+                      ) : null}
+                      {aud.priority === 'PRIORITE_0' ? (
+                        <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded border border-carbon-600/50 text-cream/50">
+                          {PRIORITY_LABELS.PRIORITE_0}
+                        </span>
+                      ) : null}
+                    </div>
                     <div className="flex items-center gap-1.5 text-xs text-cream/40 shrink-0">
                       <Clock className="w-3.5 h-3.5" />
                       {formatTime(aud.createdAt)}
@@ -339,7 +492,8 @@ export function WaitingRoomView({
                   </div>
                 </Card>
               </motion.div>
-            ))}
+            );
+            })}
           </div>
         );
 
@@ -352,38 +506,39 @@ export function WaitingRoomView({
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-        {statCards
-          .filter((s) => s.visible)
-          .map((stat, i) => (
+      <div className="overflow-x-auto -mx-1 px-1 pb-1">
+        <div className={cn('grid gap-3 sm:gap-4', statGridCols[visibleStats.length] ?? 'grid-cols-4')}>
+          {visibleStats.map((stat, i) => (
             <motion.div
               key={stat.label}
               initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: i * 0.04 }}
+              className="min-w-[7rem]"
             >
               <Card
                 className={cn(
-                  'border-military-800/30 bg-carbon-900/40 hover:border-military-600/40 transition-all cursor-pointer',
+                  'h-full border-military-800/30 bg-carbon-900/40 hover:border-military-600/40 transition-all cursor-pointer',
                   stat.glow && 'glow-critical border-amber-900/30',
                   stat.tab === activeTab && 'ring-1 ring-military-500/40 border-military-600/50',
                 )}
                 onClick={() => setActiveTab(stat.tab)}
               >
-                <div className="flex items-center gap-2 mb-3">
-                  <div className={cn('p-1.5 rounded-lg bg-carbon-950/60', stat.tone)}>
+                <div className="flex items-center gap-2 mb-2 sm:mb-3">
+                  <div className={cn('p-1.5 rounded-lg bg-carbon-950/60 shrink-0', stat.tone)}>
                     <stat.icon className="w-3.5 h-3.5" />
                   </div>
-                  <span className="text-[9px] font-mono font-bold uppercase tracking-[0.2em] text-cream/40">
+                  <span className="text-[9px] font-mono font-bold uppercase tracking-[0.15em] sm:tracking-[0.2em] text-cream/40 truncate">
                     {stat.label}
                   </span>
                 </div>
-                <p className={cn('text-3xl font-black font-display tracking-tight', stat.tone)}>
+                <p className={cn('text-2xl sm:text-3xl font-black font-display tracking-tight', stat.tone)}>
                   {String(stat.value).padStart(2, '0')}
                 </p>
               </Card>
             </motion.div>
           ))}
+        </div>
       </div>
 
       <div className="space-y-4">

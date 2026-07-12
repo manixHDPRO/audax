@@ -40,6 +40,151 @@ html {
   color-scheme: dark;
 }
 
+html[data-theme='sand'],
+html[data-theme='daylight'] {
+  color-scheme: light;
+}
+
+/* ─── Thème Midnight ─── */
+html[data-theme='midnight'] {
+  --color-military-950: #060a14;
+  --color-military-900: #0c1525;
+  --color-military-800: #152238;
+  --color-military-700: #1f3352;
+  --color-military-600: #2a4a72;
+  --color-military-500: #3b6ea8;
+  --color-military-400: #5a8fc4;
+  --color-military-300: #7eb8ff;
+  --color-military-200: #a8d0ff;
+  --color-military-100: #d4e8ff;
+  --color-military-50: #edf5ff;
+
+  --color-carbon-950: #04060c;
+  --color-carbon-900: #080d18;
+  --color-carbon-800: #0f1624;
+  --color-carbon-700: #161f30;
+  --color-carbon-600: #1e2a40;
+  --color-carbon-500: #283650;
+
+  --color-gold-500: #5a9fd4;
+  --color-gold-400: #7eb8ff;
+  --color-gold-300: #9ecfff;
+  --color-gold-200: #c4e2ff;
+  --color-gold-100: #e3f0ff;
+
+  --color-cream: #e8eef8;
+  --theme-grid-line: rgba(59, 110, 168, 0.07);
+  --theme-glow-accent: rgba(59, 110, 168, 0.25);
+  --theme-glow-gold: rgba(126, 184, 255, 0.25);
+}
+
+/* ─── Thème Obsidian ─── */
+html[data-theme='obsidian'] {
+  --color-military-950: #09090b;
+  --color-military-900: #111114;
+  --color-military-800: #1c1c21;
+  --color-military-700: #2a2a32;
+  --color-military-600: #3f3f48;
+  --color-military-500: #5c5c68;
+  --color-military-400: #7a7a88;
+  --color-military-300: #9898a8;
+  --color-military-200: #b8b8c4;
+  --color-military-100: #d8d8e0;
+  --color-military-50: #efeff2;
+
+  --color-carbon-950: #050506;
+  --color-carbon-900: #0c0c0e;
+  --color-carbon-800: #141418;
+  --color-carbon-700: #1c1c22;
+  --color-carbon-600: #26262e;
+  --color-carbon-500: #32323c;
+
+  --color-gold-500: #a8a8b8;
+  --color-gold-400: #c4c4d0;
+  --color-gold-300: #d4d4dc;
+  --color-gold-200: #e4e4ea;
+  --color-gold-100: #f0f0f4;
+
+  --color-cream: #ececef;
+  --theme-grid-line: rgba(255, 255, 255, 0.04);
+  --theme-glow-accent: rgba(255, 255, 255, 0.12);
+  --theme-glow-gold: rgba(212, 212, 220, 0.2);
+}
+
+/* ─── Thème Sand (clair) ─── */
+html[data-theme='sand'] {
+  --color-military-950: #ebe4d4;
+  --color-military-900: #e0d6c2;
+  --color-military-800: #cfc2a8;
+  --color-military-700: #b8a888;
+  --color-military-600: #9a8868;
+  --color-military-500: #8a7b5a;
+  --color-military-400: #6e6248;
+  --color-military-300: #564d38;
+  --color-military-200: #3e3828;
+  --color-military-100: #2a261c;
+  --color-military-50: #1a1812;
+
+  --color-carbon-950: #f4efe4;
+  --color-carbon-900: #ebe4d6;
+  --color-carbon-800: #e0d8c8;
+  --color-carbon-700: #d2c8b4;
+  --color-carbon-600: #c4b8a0;
+  --color-carbon-500: #b5a88c;
+
+  --color-gold-500: #8a6b2e;
+  --color-gold-400: #a88432;
+  --color-gold-300: #c9a227;
+  --color-gold-200: #dfc46a;
+  --color-gold-100: #f0e1a1;
+
+  --color-cream: #3d3428;
+  --theme-grid-line: rgba(92, 74, 50, 0.08);
+  --theme-glow-accent: rgba(138, 123, 90, 0.2);
+  --theme-glow-gold: rgba(201, 162, 39, 0.25);
+}
+
+/* ─── Thème Daylight (clair) ─── */
+html[data-theme='daylight'] {
+  --color-military-950: #dbeafe;
+  --color-military-900: #bfdbfe;
+  --color-military-800: #93c5fd;
+  --color-military-700: #60a5fa;
+  --color-military-600: #3b82f6;
+  --color-military-500: #2563eb;
+  --color-military-400: #1d4ed8;
+  --color-military-300: #1e40af;
+  --color-military-200: #1e3a8a;
+  --color-military-100: #172554;
+  --color-military-50: #0f172a;
+
+  --color-carbon-950: #eef2f7;
+  --color-carbon-900: #e2e8f0;
+  --color-carbon-800: #cbd5e1;
+  --color-carbon-700: #b0bcc9;
+  --color-carbon-600: #94a3b8;
+  --color-carbon-500: #7a8a9e;
+
+  --color-gold-500: #1e3a5f;
+  --color-gold-400: #2563eb;
+  --color-gold-300: #3b82f6;
+  --color-gold-200: #60a5fa;
+  --color-gold-100: #93c5fd;
+
+  --color-cream: #0f172a;
+  --theme-grid-line: rgba(37, 99, 235, 0.07);
+  --theme-glow-accent: rgba(37, 99, 235, 0.2);
+  --theme-glow-gold: rgba(37, 99, 235, 0.15);
+}
+
+/* Tactical — valeurs par défaut des variables dynamiques */
+html,
+html[data-theme='tactical'] {
+  --theme-grid-line: rgba(74, 124, 74, 0.05);
+  --theme-glow-accent: rgba(74, 124, 74, 0.2);
+  --theme-glow-gold: rgba(201, 162, 39, 0.25);
+}
+
 body {
   background: var(--color-carbon-950);
   color: var(--color-cream);
@@ -50,21 +195,21 @@ body {
 
 .bg-command-grid {
   background-image:
-    linear-gradient(rgba(74, 124, 74, 0.05) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(74, 124, 74, 0.05) 1px, transparent 1px);
+    linear-gradient(var(--theme-grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--theme-grid-line) 1px, transparent 1px);
   background-size: 40px 40px;
 }
 
 .glow-green {
-  box-shadow: 0 0 20px rgba(74, 124, 74, 0.2), 0 0 40px rgba(74, 124, 74, 0.1);
+  box-shadow: 0 0 20px var(--theme-glow-accent), 0 0 40px color-mix(in srgb, var(--theme-glow-accent) 50%, transparent);
 }
 
 .glow-green-strong {
-  box-shadow: 0 0 30px rgba(74, 124, 74, 0.3), 0 0 60px rgba(74, 124, 74, 0.15);
+  box-shadow: 0 0 30px var(--theme-glow-accent), 0 0 60px color-mix(in srgb, var(--theme-glow-accent) 50%, transparent);
 }
 
 .glow-gold {
-  box-shadow: 0 0 20px rgba(201, 162, 39, 0.25), 0 0 40px rgba(201, 162, 39, 0.1);
+  box-shadow: 0 0 20px var(--theme-glow-gold), 0 0 40px color-mix(in srgb, var(--theme-glow-gold) 40%, transparent);
 }
 
 .glow-critical {
@@ -78,17 +223,17 @@ body {
 }
 
 .glass {
-  background: rgba(18, 18, 18, 0.65);
+  background: color-mix(in srgb, var(--color-carbon-800) 65%, transparent);
   -webkit-backdrop-filter: blur(12px);
   backdrop-filter: blur(12px);
-  border: 1px solid rgba(74, 124, 74, 0.15);
+  border: 1px solid color-mix(in srgb, var(--color-military-500) 15%, transparent);
 }
 
 .glass-strong {
-  background: rgba(10, 15, 10, 0.85);
+  background: color-mix(in srgb, var(--color-carbon-900) 85%, transparent);
   -webkit-backdrop-filter: blur(20px);
   backdrop-filter: blur(20px);
-  border: 1px solid rgba(74, 124, 74, 0.2);
+  border: 1px solid color-mix(in srgb, var(--color-military-500) 20%, transparent);
 }
 
 .tactical-corners {
@@ -131,8 +276,8 @@ body {
     0deg,
     transparent,
     transparent 1px,
-    rgba(74, 124, 74, 0.03) 1px,
-    rgba(74, 124, 74, 0.03) 2px
+    color-mix(in srgb, var(--color-military-500) 3%, transparent) 1px,
+    color-mix(in srgb, var(--color-military-500) 3%, transparent) 2px
   );
   pointer-events: none;
   z-index: 10;

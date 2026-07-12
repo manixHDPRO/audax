@@ -357,3 +357,35 @@ export async function notifyAudienceReadyForAccompaniment(
 
   return recipients.map((u) => u.id);
 }
+
+/** Salle d'attente confirme la présence d'un demandeur reprogrammé — alerte le Protocol. */
+export async function notifyProtocolOnRequesterPresenceConfirmed(
+  prisma: PrismaClient,
+  audience: AudienceNotify,
+): Promise<string[]> {
+  const scope = await resolveVisitTargetScope(prisma, audience.visitTargetUserId);
+  if (scope.role !== UserRole.CEMG) return [];
+
+  const users = await prisma.user.findMany({
+    where: {
+      isActive: true,
+      role: UserRole.PROTOCOL,
+    },
+    select: { id: true, cabinetId: true, bureauId: true },
+  });
+
+  const recipients = pickProtocolRecipients(users, scope);
+  if (!recipients.length) return [];
+
+  await prisma.notification.createMany({
+    data: recipients.map((user) => ({
+      userId: user.id,
+      type: NotificationType.WARNING,
+      title: 'Présence confirmée — audience reprogrammée',
+      message: `${audience.reference} — ${audience.requesterName} est présent en salle d'attente`,
+      link: `/protocol`,
+    })),
+  });
+
+  return recipients.map((u) => u.id);
+}

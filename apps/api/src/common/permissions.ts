@@ -82,6 +82,7 @@ export const PERMISSIONS = {
     UserRole.SECRETAIRE,
     UserRole.PROTOCOL,
     UserRole.CEMG,
+    UserRole.SALLE_ATTENTE,
     UserRole.OBSERVATEUR,
     UserRole.ASSISTANT,
   ],

@@ -3,6 +3,7 @@
 import { Card, CardHeader, CardTitle } from '@/components/ui/card';
 import { TwoFactorSetup } from '@/components/auth/two-factor-setup';
 import { NotificationSoundSettings } from '@/components/settings/notification-sound-settings';
+import { ThemeSettings } from '@/components/settings/theme-settings';
 import { useAuthStore } from '@/stores/auth-store';
 import { ROLE_LABELS } from '@/types';
 
@@ -11,6 +12,8 @@ export function GeneralSettingsTab() {
 
   return (
     <div className="space-y-6">
+      <ThemeSettings />
+
       <TwoFactorSetup />
 
       <NotificationSoundSettings />

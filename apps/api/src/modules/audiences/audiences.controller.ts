@@ -77,6 +77,17 @@ export class AudiencesController {
     });
   }
 
+  @Get('presence-pending')
+  @RequirePermission('ACCOMPANY_AUDIENCE')
+  findPresencePending(@CurrentUser() user: JwtPayload) {
+    return this.audiencesService.findPresencePendingForWaitingRoom({
+      id: user.sub,
+      role: user.role as UserRole,
+      cabinetId: user.cabinetId,
+      bureauId: user.bureauId,
+    });
+  }
+
   @Get('visit-targets')
   @RequirePermission('CREATE_AUDIENCE')
   findVisitTargets(@CurrentUser() user: JwtPayload) {
@@ -102,8 +113,13 @@ export class AudiencesController {
 
   @Get('my-today')
   @RequirePermission('VIEW_OWN_AUDIENCES_TODAY')
-  findMyToday(@CurrentUser('sub') userId: string) {
-    return this.audiencesService.findMyTodayForWaitingRoom(userId);
+  findMyToday(@CurrentUser() user: JwtPayload) {
+    return this.audiencesService.findMyTodayForWaitingRoom({
+      id: user.sub,
+      role: user.role as UserRole,
+      cabinetId: user.cabinetId,
+      bureauId: user.bureauId,
+    });
   }
 
   @Get(':id')
@@ -209,6 +225,16 @@ export class AudiencesController {
     @CurrentUser('sub') userId: string,
   ) {
     return this.audiencesService.completeAccompaniment(id, userId, dto);
+  }
+
+  @Post(':id/confirm-presence')
+  @RequirePermission('ACCOMPANY_AUDIENCE')
+  confirmRequesterPresence(
+    @Param('id') id: string,
+    @Body() dto: CompleteAccompanimentDto,
+    @CurrentUser('sub') userId: string,
+  ) {
+    return this.audiencesService.confirmRequesterPresence(id, userId, dto);
   }
 
   @Post(':id/confirm')

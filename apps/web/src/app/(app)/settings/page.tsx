@@ -9,11 +9,12 @@ import { RolesTab } from '@/components/settings/roles-tab';
 import { PermissionsMatrixTab } from '@/components/settings/permissions-matrix-tab';
 import { OrgUnitsTab } from '@/components/settings/org-units-tab';
 import { MilitaryGradesTab } from '@/components/settings/military-grades-tab';
+import { SystemSettingsTab } from '@/components/settings/system-settings-tab';
 import { useAuthStore, canManageUsers } from '@/stores/auth-store';
 import { cn } from '@/lib/utils';
-import { Settings, UserCog, Shield, KeyRound, Building2, Medal } from 'lucide-react';
+import { Settings, UserCog, Shield, KeyRound, Building2, Medal, Monitor } from 'lucide-react';
 
-type SettingsTab = 'general' | 'users' | 'roles' | 'permissions' | 'org' | 'grades';
+type SettingsTab = 'general' | 'users' | 'roles' | 'permissions' | 'org' | 'grades' | 'system';
 
 const TABS: { id: SettingsTab; label: string; icon: React.ElementType; adminOnly?: boolean }[] = [
   { id: 'general', label: 'Général', icon: Settings },
@@ -22,6 +23,7 @@ const TABS: { id: SettingsTab; label: string; icon: React.ElementType; adminOnly
   { id: 'permissions', label: 'Permissions', icon: KeyRound, adminOnly: true },
   { id: 'org', label: 'Structure', icon: Building2, adminOnly: true },
   { id: 'grades', label: 'Grades militaires', icon: Medal, adminOnly: true },
+  { id: 'system', label: 'Système', icon: Monitor, adminOnly: true },
 ];
 
 function SettingsContent() {
@@ -32,7 +34,12 @@ function SettingsContent() {
 
   const rawTab = searchParams.get('tab') as SettingsTab | null;
   const activeTab: SettingsTab =
-    rawTab === 'users' || rawTab === 'roles' || rawTab === 'permissions' || rawTab === 'org' || rawTab === 'grades'
+    rawTab === 'users' ||
+    rawTab === 'roles' ||
+    rawTab === 'permissions' ||
+    rawTab === 'org' ||
+    rawTab === 'grades' ||
+    rawTab === 'system'
       ? isAdmin
         ? rawTab
         : 'general'
@@ -80,6 +87,7 @@ function SettingsContent() {
       {activeTab === 'permissions' && isAdmin && <PermissionsMatrixTab />}
       {activeTab === 'org' && isAdmin && <OrgUnitsTab />}
       {activeTab === 'grades' && isAdmin && <MilitaryGradesTab />}
+      {activeTab === 'system' && isAdmin && <SystemSettingsTab />}
     </div>
   );
 }

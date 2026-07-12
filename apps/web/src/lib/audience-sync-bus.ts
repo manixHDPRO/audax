@@ -2,7 +2,14 @@ import type { NotificationSoundType } from '@/lib/notification-sounds';
 import type { UserRole } from '@/types';
 
 export type AudienceSyncEvent = {
-  type: 'sync' | 'created' | 'updated' | 'confirmed' | 'reception-completed' | 'accompaniment-completed';
+  type:
+    | 'sync'
+    | 'created'
+    | 'updated'
+    | 'confirmed'
+    | 'reception-completed'
+    | 'accompaniment-completed'
+    | 'presence-confirmed';
   audienceId?: string;
   /** Jouer le son immédiatement pour ces rôles (même navigateur / autre onglet). */
   alertRoles?: UserRole[];
@@ -105,6 +112,18 @@ export function buildProtocolFollowUpAlertSync(): Pick<
   return {
     alertRoles: ['SALLE_ATTENTE'],
     alertSoundByRole: { SALLE_ATTENTE: 'WARNING' },
+    soundType: 'WARNING',
+  };
+}
+
+/** Salle confirme la présence d'un demandeur reprogrammé — alerte le Protocol. */
+export function buildRequesterPresenceAlertSync(): Pick<
+  AudienceSyncEvent,
+  'alertRoles' | 'alertSoundByRole' | 'soundType'
+> {
+  return {
+    alertRoles: ['PROTOCOL'],
+    alertSoundByRole: { PROTOCOL: 'WARNING' },
     soundType: 'WARNING',
   };
 }

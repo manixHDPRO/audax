@@ -6,6 +6,7 @@ import { AuthService } from './auth.service';
 import { TwoFactorService } from './two-factor.service';
 import { LoginDto, RefreshDto, Verify2FADto, Enable2FADto, Disable2FADto } from './dto/login.dto';
 import { ChangePasswordDto } from './dto/profile.dto';
+import { UnlockSessionDto } from './dto/unlock-session.dto';
 import { SetPasswordDto } from './dto/set-password.dto';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
@@ -84,6 +85,15 @@ export class AuthController {
   @ApiOperation({ summary: 'Changer son mot de passe' })
   changePassword(@CurrentUser('sub') userId: string, @Body() dto: ChangePasswordDto) {
     return this.authService.changePassword(userId, dto);
+  }
+
+  @Post('unlock-session')
+  @UseGuards(AuthGuard('jwt'))
+  @ApiBearerAuth()
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Déverrouiller la session après veille (mot de passe)' })
+  unlockSession(@CurrentUser('sub') userId: string, @Body() dto: UnlockSessionDto) {
+    return this.authService.unlockSession(userId, dto);
   }
 
   @Get('password-token/validate')

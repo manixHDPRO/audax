@@ -20,15 +20,18 @@ import { PRIORITY_LABELS, STATUS_LABELS } from '@/types';
 import {
   completeAccompanimentApi,
   completeReceptionApi,
+  confirmRequesterPresenceApi,
   listAccompanimentPendingApi,
   listBureausApi,
   listCabinetsApi,
+  listPresencePendingApi,
   listReceptionsPendingApi,
   type AccompanimentPendingApiRecord,
   type OrgUnit,
+  type PresencePendingApiRecord,
   type ReceptionPendingApiRecord,
 } from '@/lib/api-client';
-import { notifyAudienceSync, subscribeAudienceSync } from '@/lib/audience-sync-bus';
+import { notifyAudienceSync, subscribeAudienceSync, buildRequesterPresenceAlertSync } from '@/lib/audience-sync-bus';
 import { filterAudiencesByOrgUnit, isCemgPilotageAudience, isPriorite0HiddenFromChef } from '@/lib/audience-utils';
 
 function readStoredViewMode(): AudienceListViewMode {
@@ -69,6 +72,10 @@ export default function AudiencesPage() {
   const [loadingReceptions, setLoadingReceptions] = useState(false);
   const [completingReceptionId, setCompletingReceptionId] = useState<string | null>(null);
   const [receptionError, setReceptionError] = useState('');
+  const [presencePending, setPresencePending] = useState<PresencePendingApiRecord[]>([]);
+  const [loadingPresence, setLoadingPresence] = useState(false);
+  const [confirmingPresenceId, setConfirmingPresenceId] = useState<string | null>(null);
+  const [presenceError, setPresenceError] = useState('');
 
   const loadAccompanimentPending = useCallback(async (silent = false) => {
     if (!accessToken || !canAccompany) return;
@@ -102,10 +109,31 @@ export default function AudiencesPage() {
     }
   }, [accessToken, canCompleteReception, isWaitingRoom]);
 
+  const loadPresencePending = useCallback(async (silent = false) => {
+    if (!accessToken || !canAccompany) return;
+    if (!silent) setLoadingPresence(true);
+    try {
+      const list = await listPresencePendingApi(accessToken);
+      setPresencePending(list);
+      setPresenceError('');
+    } catch (err) {
+      if (!silent) {
+        setPresenceError(err instanceof Error ? err.message : 'Impossible de charger les présences à confirmer');
+      }
+    } finally {
+      if (!silent) setLoadingPresence(false);
+    }
+  }, [accessToken, canAccompany]);
+
   useEffect(() => {
     if (!isWaitingRoom || !canAccompany || !accessToken) return;
     void loadAccompanimentPending();
   }, [isWaitingRoom, canAccompany, accessToken, loadAccompanimentPending]);
+
+  useEffect(() => {
+    if (!isWaitingRoom || !canAccompany || !accessToken) return;
+    void loadPresencePending();
+  }, [isWaitingRoom, canAccompany, accessToken, loadPresencePending]);
 
   useEffect(() => {
     if (!isWaitingRoom || !canCompleteReception || !accessToken) return;
@@ -119,6 +147,14 @@ export default function AudiencesPage() {
     }, 5000);
     return () => clearInterval(interval);
   }, [isWaitingRoom, canAccompany, accessToken, loadAccompanimentPending]);
+
+  useEffect(() => {
+    if (!isWaitingRoom || !canAccompany || !accessToken) return;
+    const interval = setInterval(() => {
+      void loadPresencePending(true);
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [isWaitingRoom, canAccompany, accessToken, loadPresencePending]);
 
   useEffect(() => {
     if (!isWaitingRoom || !canCompleteReception || !accessToken) return;
@@ -138,9 +174,13 @@ export default function AudiencesPage() {
       if (
         event.type === 'confirmed' ||
         event.type === 'reception-completed' ||
-        event.type === 'accompaniment-completed'
+        event.type === 'accompaniment-completed' ||
+        event.type === 'presence-confirmed'
       ) {
-        if (canAccompany) void loadAccompanimentPending(true);
+        if (canAccompany) {
+          void loadAccompanimentPending(true);
+          void loadPresencePending(true);
+        }
         if (isWaitingRoom && canCompleteReception) void loadReceptionsPending(true);
       }
     });
@@ -150,6 +190,7 @@ export default function AudiencesPage() {
     canCompleteReception,
     isWaitingRoom,
     loadAccompanimentPending,
+    loadPresencePending,
     loadReceptionsPending,
   ]);
 
@@ -170,6 +211,29 @@ export default function AudiencesPage() {
       void loadAccompanimentPending(true);
     } finally {
       setAccompanyingId(null);
+    }
+  };
+
+  const handleConfirmPresence = async (audienceId: string) => {
+    if (!accessToken) return;
+
+    setPresenceError('');
+    setConfirmingPresenceId(audienceId);
+    try {
+      await confirmRequesterPresenceApi(accessToken, audienceId);
+      setPresencePending((prev) => prev.filter((a) => a.id !== audienceId));
+      notifyAudienceSync({
+        type: 'presence-confirmed',
+        audienceId,
+        ...buildRequesterPresenceAlertSync(),
+      });
+    } catch (err) {
+      setPresenceError(
+        err instanceof Error ? err.message : 'Impossible de confirmer la présence.',
+      );
+      void loadPresencePending(true);
+    } finally {
+      setConfirmingPresenceId(null);
     }
   };
 
@@ -296,6 +360,11 @@ export default function AudiencesPage() {
             accompanimentError={accompanimentError}
             accompanyingId={accompanyingId}
             onCompleteAccompaniment={(id) => void handleCompleteAccompaniment(id)}
+            presencePending={presencePending}
+            loadingPresence={loadingPresence}
+            presenceError={presenceError}
+            confirmingPresenceId={confirmingPresenceId}
+            onConfirmPresence={(id) => void handleConfirmPresence(id)}
             receptionsPending={receptionsPending}
             loadingReceptions={loadingReceptions}
             receptionError={receptionError}

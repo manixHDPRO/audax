@@ -1,4 +1,5 @@
-import { AudienceStatus, Prisma, UserRole } from '@prisma/client';
+import { NotFoundException } from '@nestjs/common';
+import { AudienceStatus, Prisma, PrismaClient, UserRole } from '@prisma/client';
 import { priorite0ExcludeWhere } from './priorite0-access';
 import { isPlatformAdmin } from './super-admin-access';
 
@@ -179,4 +180,22 @@ export function shouldNotifyOnAudienceCreate(role: UserRole): boolean {
 
 export function shouldNotifyOnDircabForward(role: UserRole): boolean {
   return role === UserRole.CHEF || isPlatformAdmin(role);
+}
+
+/** Vérifie que l'utilisateur peut planifier / reprogrammer cette audience (même périmètre que la liste). */
+export async function assertCanPlanifyAudience(
+  prisma: PrismaClient,
+  audienceId: string,
+  user: UserContext,
+): Promise<void> {
+  const allowed = await prisma.audience.count({
+    where: {
+      id: audienceId,
+      ...audienceListWhereForRole(user),
+    },
+  });
+
+  if (allowed === 0) {
+    throw new NotFoundException('Audience introuvable');
+  }
 }

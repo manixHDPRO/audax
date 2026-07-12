@@ -11,7 +11,8 @@ import {
   AlertTriangle,
   ArrowRight,
   Search,
-  Send
+  Send,
+  CalendarClock,
 } from 'lucide-react';
 import { AuthGuard } from '@/components/auth/auth-guard';
 import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -27,6 +28,9 @@ import {
   isProtocolCemgConfirmQueue,
   isProtocolCemgReceptionQueue,
   isCemgRelatedAudience,
+  getLastRescheduleLabel,
+  isRequesterPresenceConfirmedForReschedule,
+  isRescheduledPendingForward,
 } from '@/lib/audience-utils';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import Link from 'next/link';
@@ -44,35 +48,47 @@ export default function ProtocolTrackingPage() {
   const [forwardDialogOpen, setForwardDialogOpen] = useState(false);
   const [selectedAudienceId, setSelectedAudienceId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
-  const [activeTab, setActiveTab] = useState<'forward' | 'cabinet' | 'confirm' | 'reception'>('forward');
+  const [activeTab, setActiveTab] = useState<'forward' | 'rescheduled' | 'cabinet' | 'confirm' | 'reception'>('forward');
 
-  const selectedAudience = useMemo(
-    () => audiences.find((a) => a.id === selectedAudienceId),
-    [audiences, selectedAudienceId],
-  );
+  const isActiveProtocolAudience = (a: (typeof audiences)[number]) =>
+    !['TERMINEE', 'ARCHIVEE', 'REJETEE'].includes(a.status);
 
-  // 0. Audiences en attente de transmission au Cabinet
-  const toForward = useMemo(
+  // Audiences reprogrammées en attente de transmission (EN_ATTENTE uniquement)
+  const rescheduled = useMemo(
     () =>
       audiences.filter(
-        (a) => a.status === 'EN_ATTENTE' && isCemgRelatedAudience(a),
+        (a) =>
+          isRescheduledPendingForward(a) &&
+          isActiveProtocolAudience(a),
       ),
     [audiences],
   );
 
-  // 0.5 Audiences au circuit CEMG — suivi Protocol (hors validations Chef de Cabinet)
+  // 0. Audiences en attente de transmission au Cabinet (hors reprogrammées EN_ATTENTE)
+  const toForward = useMemo(
+    () =>
+      audiences.filter(
+        (a) =>
+          a.status === 'EN_ATTENTE' &&
+          isCemgRelatedAudience(a) &&
+          !isRescheduledPendingForward(a),
+      ),
+    [audiences],
+  );
+
+  // 0.5 Audiences au circuit CEMG — suivi Protocol
   const atCabinet = useMemo(
     () => audiences.filter((a) => isProtocolCemgCabinetTracking(a)),
     [audiences],
   );
 
-  // 1. Audiences validées par le CEMG → suivi Protocol uniquement
+  // 1. Audiences validées par le CEMG → suivi Protocol
   const toConfirm = useMemo(
     () => audiences.filter((a) => isProtocolCemgConfirmQueue(a)),
     [audiences],
   );
 
-  // 2. Audiences CEMG confirmées → réception Protocol (après accompagnement salle)
+  // 2. Audiences CEMG confirmées → réception Protocol
   const toReceive = useMemo(
     () =>
       audiences.filter((a) => {
@@ -80,6 +96,11 @@ export default function ProtocolTrackingPage() {
         return a.statusHistory?.some((e) => e.comment?.startsWith('Accompagné au bureau'));
       }),
     [audiences],
+  );
+
+  const selectedAudience = useMemo(
+    () => audiences.find((a) => a.id === selectedAudienceId),
+    [audiences, selectedAudienceId],
   );
 
   const filteredToForward = toForward.filter(a =>
@@ -110,7 +131,14 @@ export default function ProtocolTrackingPage() {
     a.subject.toLowerCase().includes(search.toLowerCase())
   );
 
-  type ProtocolTabId = 'forward' | 'cabinet' | 'confirm' | 'reception';
+  const filteredRescheduled = rescheduled.filter(a =>
+    !search ||
+    a.reference.toLowerCase().includes(search.toLowerCase()) ||
+    a.requesterName.toLowerCase().includes(search.toLowerCase()) ||
+    a.subject.toLowerCase().includes(search.toLowerCase())
+  );
+
+  type ProtocolTabId = 'forward' | 'rescheduled' | 'cabinet' | 'confirm' | 'reception';
 
   const protocolTabs: {
     id: ProtocolTabId;
@@ -131,6 +159,16 @@ export default function ProtocolTrackingPage() {
       accentClass: 'text-blue-500',
       dotClass: 'bg-blue-500',
       badgeClass: 'text-blue-500/60',
+    },
+    {
+      id: 'rescheduled',
+      label: 'Les audiences reprogrammées',
+      description: 'Audiences replanifiées en attente — présence salle d\'attente puis transmission au Cabinet',
+      count: filteredRescheduled.length,
+      borderClass: 'border-purple-500/20',
+      accentClass: 'text-purple-400',
+      dotClass: 'bg-purple-500',
+      badgeClass: 'text-purple-400/60',
     },
     {
       id: 'cabinet',
@@ -204,6 +242,60 @@ export default function ProtocolTrackingPage() {
             </div>
           </div>
         )) : renderEmptyState('Aucune nouvelle demande');
+
+      case 'rescheduled':
+        return filteredRescheduled.length ? filteredRescheduled.map((aud) => {
+          const rescheduleLabel = getLastRescheduleLabel(aud);
+          const presenceConfirmed = isRequesterPresenceConfirmedForReschedule(aud);
+          const canForward = presenceConfirmed;
+          const awaitingPresence = !presenceConfirmed;
+
+          return (
+            <div key={aud.id} className="p-5 rounded-2xl bg-carbon-800/30 border border-military-800/30 hover:border-purple-500/30 transition-all group">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div className="space-y-2 flex-1 min-w-[200px]">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <span className="font-mono text-[10px] text-purple-400 bg-purple-950/50 px-2 py-0.5 rounded border border-purple-900/30">{aud.reference}</span>
+                    <StatusBadge status={aud.status} className="scale-75 origin-left" />
+                    <PriorityBadge priority={aud.priority} />
+                  </div>
+                  <h3 className="text-lg font-bold text-cream group-hover:text-white transition-colors">{aud.subject}</h3>
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-cream/40">
+                    <span className="flex items-center gap-1.5"><UserCheck className="w-3.5 h-3.5" /> {aud.requesterName}</span>
+                    {rescheduleLabel ? (
+                      <>
+                        <span className="w-1 h-1 rounded-full bg-military-800 hidden sm:block" />
+                        <span className="flex items-center gap-1.5 text-purple-300/80">
+                          <CalendarClock className="w-3.5 h-3.5" /> {rescheduleLabel}
+                        </span>
+                      </>
+                    ) : null}
+                  </div>
+                </div>
+                <div className="flex flex-col items-end gap-3">
+                  {awaitingPresence ? (
+                    <span className="text-[10px] uppercase tracking-wider px-2 py-1 rounded border border-amber-600/40 text-amber-300 text-center max-w-[220px]">
+                      En attente de confirmation de présence (salle d&apos;attente)
+                    </span>
+                  ) : null}
+                  {canForward ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="border-purple-500/30 text-purple-300 hover:bg-purple-500/10"
+                      onClick={() => { setSelectedAudienceId(aud.id); setForwardDialogOpen(true); }}
+                    >
+                      <Send className="w-4 h-4" /> Transmettre au Cabinet
+                    </Button>
+                  ) : null}
+                  <Link href={`/audiences/${aud.id}`} className="text-[10px] font-mono text-military-500 hover:text-military-400 uppercase tracking-widest flex items-center gap-1">
+                    Détails <ArrowRight className="w-3 h-3" />
+                  </Link>
+                </div>
+              </div>
+            </div>
+          );
+        }) : renderEmptyState('Aucune audience reprogrammée en attente de transmission');
 
       case 'cabinet':
         return filteredAtCabinet.length ? filteredAtCabinet.map((aud) => (
@@ -383,7 +475,7 @@ export default function ProtocolTrackingPage() {
         </motion.div>
 
         {/* Stats Summary */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
           <Card tactical className="bg-military-900/10 border-military-800/30 cursor-pointer hover:border-blue-500/30 transition-colors" onClick={() => setActiveTab('forward')}>
             <div className="flex items-center gap-4">
               <div className="p-3 rounded-xl bg-blue-500/10 text-blue-500 border border-blue-500/20">
@@ -392,6 +484,17 @@ export default function ProtocolTrackingPage() {
               <div>
                 <p className="text-[10px] text-military-500 uppercase tracking-widest font-mono font-bold">À Transmettre</p>
                 <p className="text-3xl font-bold text-cream font-display">{toForward.length}</p>
+              </div>
+            </div>
+          </Card>
+          <Card tactical className="bg-military-900/10 border-military-800/30 cursor-pointer hover:border-purple-500/30 transition-colors" onClick={() => setActiveTab('rescheduled')}>
+            <div className="flex items-center gap-4">
+              <div className="p-3 rounded-xl bg-purple-500/10 text-purple-400 border border-purple-500/20">
+                <CalendarClock className="w-6 h-6" />
+              </div>
+              <div>
+                <p className="text-[10px] text-military-500 uppercase tracking-widest font-mono font-bold">Reprogrammées</p>
+                <p className="text-3xl font-bold text-cream font-display">{rescheduled.length}</p>
               </div>
             </div>
           </Card>

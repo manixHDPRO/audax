@@ -155,6 +155,8 @@ export function mapApiAudience(record: AudienceApiRecord): Audience {
     motive: record.motive,
     requesterName: record.requesterName,
     requesterOrg: record.requesterOrg ?? undefined,
+    requesterPhone: record.requesterPhone ?? undefined,
+    requesterAddress: record.requesterAddress ?? undefined,
     grade: record.requesterGrade ?? extractGradeFromMotive(record.motive) ?? undefined,
     status: record.status as Audience['status'],
     priority: record.priority as Audience['priority'],
@@ -470,6 +472,93 @@ export function wasValidatedByChefForAccompaniment(audience: {
       entry.comment?.startsWith(CHEF_ACCOMPANIMENT_COMMENT),
     ) ?? false
   );
+}
+
+export const RESCHEDULE_HISTORY_PREFIX = 'Replanifiée au';
+export const PRESENCE_CONFIRMED_PREFIX = 'Présence confirmée —';
+
+function getLastHistoryTimestamp(
+  entries: { comment?: string | null; createdAt?: string }[] | undefined,
+  commentPrefix: string,
+): Date | null {
+  if (!entries?.length) return null;
+
+  let latest: Date | null = null;
+  for (const entry of entries) {
+    if (!entry.comment?.startsWith(commentPrefix)) continue;
+    const at = new Date(entry.createdAt ?? 0);
+    if (!latest || at > latest) latest = at;
+  }
+  return latest;
+}
+
+export function isRequesterPresenceConfirmedForReschedule(audience: {
+  statusHistory?: { comment?: string | null; createdAt?: string }[];
+}): boolean {
+  const lastReschedule = getLastHistoryTimestamp(
+    audience.statusHistory,
+    RESCHEDULE_HISTORY_PREFIX,
+  );
+  if (!lastReschedule) return false;
+
+  const lastPresence = getLastHistoryTimestamp(
+    audience.statusHistory,
+    PRESENCE_CONFIRMED_PREFIX,
+  );
+  return lastPresence != null && lastPresence >= lastReschedule;
+}
+
+export function needsRequesterPresenceConfirmation(audience: {
+  statusHistory?: { comment?: string | null; createdAt?: string }[];
+}): boolean {
+  const lastReschedule = getLastHistoryTimestamp(
+    audience.statusHistory,
+    RESCHEDULE_HISTORY_PREFIX,
+  );
+  if (!lastReschedule) return false;
+  return !isRequesterPresenceConfirmedForReschedule(audience);
+}
+
+export function wasAudienceRescheduled(audience: {
+  statusHistory?: { comment?: string | null; createdAt?: string }[];
+}): boolean {
+  return (
+    audience.statusHistory?.some((entry) =>
+      entry.comment?.startsWith(RESCHEDULE_HISTORY_PREFIX),
+    ) ?? false
+  );
+}
+
+/** Audience reprogrammée encore dans la file Protocol (avant transmission au Cabinet). */
+export function isRescheduledPendingForward(audience: Audience): boolean {
+  if (audience.status !== 'EN_ATTENTE') return false;
+  if (!isCemgRelatedAudience(audience)) return false;
+  return wasAudienceRescheduled(audience);
+}
+
+export function getLastRescheduleLabel(audience: {
+  statusHistory?: { comment?: string | null; createdAt?: string }[];
+  scheduledAt?: string;
+}): string | undefined {
+  const reschedules = audience.statusHistory?.filter((item) =>
+    item.comment?.startsWith(RESCHEDULE_HISTORY_PREFIX),
+  );
+  if (reschedules?.length) {
+    const latest = [...reschedules].sort(
+      (a, b) => new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime(),
+    )[0];
+    if (latest.comment) return latest.comment;
+  }
+  if (audience.scheduledAt) {
+    return new Date(audience.scheduledAt).toLocaleString('fr-FR', {
+      weekday: 'short',
+      day: '2-digit',
+      month: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  }
+  return undefined;
 }
 
 /** Suivi Protocol après validation CEMG (VALIDEE / PLANIFIEE). */

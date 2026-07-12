@@ -2,8 +2,7 @@ import { BadRequestException, Injectable, NotFoundException, ConflictException }
 import { AudienceStatus, UserRole } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RescheduleDto } from './dto/calendar.dto';
-import { assertCanViewAudience } from '../../common/priorite0-access';
-import { UserContext } from '../../common/audience-role-access';
+import { assertCanPlanifyAudience, UserContext } from '../../common/audience-role-access';
 
 const SLOT_DURATION_MS = 60 * 60 * 1000;
 
@@ -14,11 +13,14 @@ export class CalendarService {
   async reschedule(audienceId: string, dto: RescheduleDto, user: UserContext) {
     const audience = await this.prisma.audience.findUnique({
       where: { id: audienceId },
-      include: { appointment: true, visitTarget: { select: { cabinetId: true, bureauId: true } } },
+      include: {
+        appointment: true,
+        visitTarget: { select: { role: true, cabinetId: true, bureauId: true } },
+      },
     });
 
     if (!audience) throw new NotFoundException('Audience introuvable');
-    assertCanViewAudience(audience, user);
+    await assertCanPlanifyAudience(this.prisma, audienceId, user);
 
     if (
       audience.status === AudienceStatus.DEJA_ENVOYE ||

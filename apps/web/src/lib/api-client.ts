@@ -193,6 +193,34 @@ export async function changePasswordApi(token: string, currentPassword: string, 
   });
 }
 
+export async function unlockSessionApi(token: string, password: string, totpCode?: string) {
+  return apiFetch<{ success: boolean }>('/auth/unlock-session', {
+    method: 'POST',
+    token,
+    body: JSON.stringify({ password, ...(totpCode ? { totpCode } : {}) }),
+  });
+}
+
+export interface SystemSecuritySettings {
+  inactivityLockEnabled: boolean;
+  inactivityTimeoutMinutes: number;
+}
+
+export async function getSystemSecuritySettingsApi(token: string) {
+  return apiFetch<SystemSecuritySettings>('/system-settings/security', { token });
+}
+
+export async function updateSystemSecuritySettingsApi(
+  token: string,
+  settings: SystemSecuritySettings,
+) {
+  return apiFetch<SystemSecuritySettings>('/system-settings/security', {
+    method: 'PATCH',
+    token,
+    body: JSON.stringify(settings),
+  });
+}
+
 export async function rescheduleApi(token: string, audienceId: string, scheduledAt: string) {
   return apiFetch<{ success: boolean; audience: AudienceApiRecord }>(`/calendar/audiences/${audienceId}/reschedule`, {
     method: 'PATCH',
@@ -242,6 +270,26 @@ export interface ReceptionPendingApiRecord {
   visitTarget?: { firstName: string; lastName: string } | null;
 }
 
+export interface PresencePendingApiRecord {
+  id: string;
+  reference: string;
+  subject: string;
+  requesterName: string;
+  requesterOrg?: string | null;
+  status: string;
+  priority: string;
+  category: string;
+  scheduledAt?: string | null;
+  createdAt: string;
+  rescheduledAt?: string | Date | null;
+  visitTarget?: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    role: string;
+  } | null;
+}
+
 export interface AccompanimentPendingApiRecord {
   id: string;
   reference: string;
@@ -254,6 +302,8 @@ export interface AccompanimentPendingApiRecord {
   scheduledAt?: string | null;
   createdAt: string;
   validatedAt: string;
+  rescheduledAt?: string | Date | null;
+  awaitingProtocolConfirmation?: boolean;
   visitTarget?: {
     id: string;
     firstName: string;
@@ -279,6 +329,18 @@ export async function listReceptionsPendingApi(token: string) {
   return apiFetch<ReceptionPendingApiRecord[]>('/audiences/receptions-pending', { token });
 }
 
+export async function listPresencePendingApi(token: string) {
+  return apiFetch<PresencePendingApiRecord[]>('/audiences/presence-pending', { token });
+}
+
+export async function confirmRequesterPresenceApi(token: string, id: string, comment?: string) {
+  return apiFetch<{ success: boolean; comment: string }>(`/audiences/${id}/confirm-presence`, {
+    method: 'POST',
+    token,
+    body: JSON.stringify(comment ? { comment } : {}),
+  });
+}
+
 export async function completeReceptionApi(token: string, id: string, comment?: string) {
   return apiFetch<AudienceApiRecord>(`/audiences/${id}/complete-reception`, {
     method: 'POST',
@@ -299,6 +361,8 @@ export interface CreateAudiencePayload {
   motive: string;
   requesterName: string;
   requesterOrg?: string;
+  requesterPhone?: string;
+  requesterAddress?: string;
   requesterGrade?: string;
   priority?: string;
   confidentiality?: string;
@@ -312,6 +376,9 @@ export interface RequesterSearchResult {
   requesters: {
     requesterName: string;
     requesterOrg: string | null;
+    requesterPhone: string | null;
+    requesterAddress: string | null;
+    subject: string;
     category: string;
     motive: string;
     lastAudienceAt: string;
@@ -425,6 +492,8 @@ export interface AudienceApiRecord {
   motive: string;
   requesterName: string;
   requesterOrg?: string | null;
+  requesterPhone?: string | null;
+  requesterAddress?: string | null;
   requesterGrade?: string | null;
   status: string;
   priority: string;
@@ -486,6 +555,9 @@ export interface WaitingRoomAudienceApiRecord {
   requesterName: string;
   category: string;
   priority: string;
+  status?: string;
+  scheduledAt?: string | null;
+  rescheduledToday?: boolean;
   createdAt: string;
   visitor?: {
     id: string;

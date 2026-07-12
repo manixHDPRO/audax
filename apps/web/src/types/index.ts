@@ -37,6 +37,9 @@ export interface WaitingRoomAudienceEntry {
   requesterName: string;
   category?: string;
   priority?: Priority;
+  status?: AudienceStatus;
+  scheduledAt?: string | null;
+  rescheduledToday?: boolean;
   createdAt: string;
   visitor?: WaitingRoomVisitorSummary | null;
 }
@@ -85,6 +88,8 @@ export interface Audience {
   motive: string;
   requesterName: string;
   requesterOrg?: string;
+  requesterPhone?: string;
+  requesterAddress?: string;
   status: AudienceStatus;
   priority: Priority;
   confidentiality: Confidentiality;

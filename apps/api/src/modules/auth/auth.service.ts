@@ -6,6 +6,7 @@ import { randomBytes } from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { LoginDto } from './dto/login.dto';
 import { ChangePasswordDto } from './dto/profile.dto';
+import { UnlockSessionDto } from './dto/unlock-session.dto';
 import { SetPasswordDto } from './dto/set-password.dto';
 import { TwoFactorService } from './two-factor.service';
 import { PermissionsService } from '../../common/permissions/permissions.service';
@@ -236,6 +237,27 @@ export class AuthService {
         entityId: userId,
       },
     });
+
+    return { success: true };
+  }
+
+  async unlockSession(userId: string, dto: UnlockSessionDto) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user?.isActive) throw new NotFoundException('Utilisateur introuvable');
+
+    const valid = await bcrypt.compare(dto.password, user.passwordHash);
+    if (!valid) {
+      throw new UnauthorizedException('Mot de passe incorrect');
+    }
+
+    if (user.twoFactorEnabled) {
+      if (!user.twoFactorSecret) {
+        throw new UnauthorizedException('Configuration 2FA incomplète');
+      }
+      if (!dto.totpCode || !this.twoFactor.verifyCode(user.twoFactorSecret, dto.totpCode)) {
+        throw new UnauthorizedException('Code 2FA invalide');
+      }
+    }
 
     return { success: true };
   }

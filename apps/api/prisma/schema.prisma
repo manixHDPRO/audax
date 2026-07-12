@@ -192,6 +192,8 @@ model Audience {
   motive          String
   requesterName   String
   requesterOrg    String?
+  requesterPhone  String?
+  requesterAddress String?
   requesterGrade  String?
   status          AudienceStatus    @default(EN_ATTENTE)
   priority        Priority          @default(NORMALE)

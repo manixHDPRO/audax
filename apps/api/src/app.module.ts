@@ -17,6 +17,7 @@ import { OrgUnitsModule } from './modules/org-units/org-units.module';
 import { ChatModule } from './modules/chat/chat.module';
 import { MailModule } from './modules/mail/mail.module';
 import { MilitaryGradesModule } from './modules/military-grades/military-grades.module';
+import { SystemSettingsModule } from './modules/system-settings/system-settings.module';
 import { HealthController } from './health.controller';
 
 @Module({
@@ -47,6 +48,7 @@ import { HealthController } from './health.controller';
     ChatModule,
     MailModule,
     MilitaryGradesModule,
+    SystemSettingsModule,
   ],
 })
 export class AppModule {}

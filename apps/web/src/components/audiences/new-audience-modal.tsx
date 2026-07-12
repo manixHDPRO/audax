@@ -9,7 +9,6 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogDescription,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { useAudiencesStore } from '@/stores/audiences-store';
@@ -19,6 +18,11 @@ import { notifyAudienceSync, buildCreateAudienceAlertSync } from '@/lib/audience
 import { formatAccompaniedPerson } from '@/lib/audience-utils';
 import { extractGradeFromMotive } from '@/lib/military-grades';
 import { useMilitaryGrades } from '@/hooks/use-military-grades';
+import {
+  AUDIENCE_MOTIF_OPTIONS,
+  buildAudienceSubjectFromMotif,
+  parseAudienceMotifFromSubject,
+} from '@/lib/audience-motifs';
 import type { Audience, Priority, Confidentiality, VisitMode, AccompaniedPerson, UserRole } from '@/types';
 import { ROLE_LABELS } from '@/types';
 
@@ -70,12 +74,18 @@ export function NewAudienceModal({ open, onOpenChange }: NewAudienceModalProps) 
   const [success, setSuccess] = useState<{ reference: string; id: string; priorite0?: boolean } | null>(null);
   const [requesterName, setRequesterName] = useState('');
   const [requesterFunction, setRequesterFunction] = useState('');
+  const [requesterPhone, setRequesterPhone] = useState('');
+  const [requesterAddress, setRequesterAddress] = useState('');
+  const [audienceMotif, setAudienceMotif] = useState<string>(AUDIENCE_MOTIF_OPTIONS[0]);
+  const [motifOtherDetail, setMotifOtherDetail] = useState('');
   const [gradeValue, setGradeValue] = useState('');
   const [searchResults, setSearchResults] = useState<RequesterSearchResult | null>(null);
   const [showSearchResults, setShowSearchResults] = useState(false);
+  const [searchLoading, setSearchLoading] = useState(false);
   const [duplicateToday, setDuplicateToday] = useState<DuplicateTodayResult | null>(null);
   const [confirmDuplicate, setConfirmDuplicate] = useState(false);
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const requesterSearchRef = useRef<HTMLDivElement>(null);
 
   const isMilitary = category === 'MILITAIRE';
   const isAccompanied = visitMode === 'ACCOMPAGNE';
@@ -87,6 +97,10 @@ export function NewAudienceModal({ open, onOpenChange }: NewAudienceModalProps) 
     setVisitTargetUserId('');
     setRequesterName('');
     setRequesterFunction('');
+    setRequesterPhone('');
+    setRequesterAddress('');
+    setAudienceMotif(AUDIENCE_MOTIF_OPTIONS[0]);
+    setMotifOtherDetail('');
     setGradeValue('');
     setSearchResults(null);
     setShowSearchResults(false);
@@ -122,23 +136,42 @@ export function NewAudienceModal({ open, onOpenChange }: NewAudienceModalProps) 
     if (!open || !accessToken || requesterName.trim().length < 2) {
       setSearchResults(null);
       setShowSearchResults(false);
+      setSearchLoading(false);
       return;
     }
 
     if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    setSearchLoading(true);
     searchDebounceRef.current = setTimeout(() => {
       void searchRequestersFromAudiencesApi(accessToken, requesterName.trim())
         .then((results) => {
           setSearchResults(results);
           setShowSearchResults(results.requesters.length > 0);
         })
-        .catch(() => setSearchResults(null));
+        .catch(() => {
+          setSearchResults(null);
+          setShowSearchResults(false);
+        })
+        .finally(() => setSearchLoading(false));
     }, 300);
 
     return () => {
       if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
     };
   }, [open, accessToken, requesterName]);
+
+  useEffect(() => {
+    if (!open || !showSearchResults) return;
+
+    function handlePointerDown(event: MouseEvent) {
+      if (!requesterSearchRef.current?.contains(event.target as Node)) {
+        setShowSearchResults(false);
+      }
+    }
+
+    document.addEventListener('mousedown', handlePointerDown);
+    return () => document.removeEventListener('mousedown', handlePointerDown);
+  }, [open, showSearchResults]);
 
   useEffect(() => {
     if (!open || !accessToken || requesterName.trim().length < 2) {
@@ -164,10 +197,20 @@ export function NewAudienceModal({ open, onOpenChange }: NewAudienceModalProps) 
     fonction: string,
     cat?: string,
     motive?: string,
+    phone?: string | null,
+    address?: string | null,
+    subject?: string,
   ) => {
     setRequesterName(name);
     setRequesterFunction(fonction);
+    setRequesterPhone(phone ?? '');
+    setRequesterAddress(address ?? '');
     if (cat) setCategory(cat);
+    if (subject) {
+      const parsed = parseAudienceMotifFromSubject(subject);
+      setAudienceMotif(parsed.motif);
+      setMotifOtherDetail(parsed.otherDetail);
+    }
     if (cat === 'MILITAIRE' && motive) {
       const grade = extractGradeFromMotive(motive, militaryGradeLabels);
       if (grade) setGradeValue(grade);
@@ -218,7 +261,11 @@ export function NewAudienceModal({ open, onOpenChange }: NewAudienceModalProps) 
     const form = new FormData(e.currentTarget);
     const nom = requesterName.trim();
     const fonction = requesterFunction.trim();
-    const objet = String(form.get('objet') ?? '').trim();
+    const phone = requesterPhone.trim();
+    const address = requesterAddress.trim();
+    const motif = audienceMotif;
+    const otherDetail = motifOtherDetail.trim();
+    const subject = buildAudienceSubjectFromMotif(motif, otherDetail);
     const grade = isMilitary ? gradeValue.trim() : undefined;
     const cat = String(form.get('category') ?? category);
     const priority = String(form.get('priority') ?? 'NORMALE') as Priority;
@@ -229,8 +276,14 @@ export function NewAudienceModal({ open, onOpenChange }: NewAudienceModalProps) 
       .map((p) => ({ name: p.name.trim(), grade: p.grade?.trim() || undefined }))
       .filter((p) => p.name);
 
-    if (!nom || !fonction || !objet) {
+    if (!nom || !fonction || !motif) {
       setError('Veuillez remplir tous les champs obligatoires.');
+      setLoading(false);
+      return;
+    }
+
+    if (motif === 'Autre' && !otherDetail) {
+      setError('Veuillez préciser le motif d\'audience.');
       setLoading(false);
       return;
     }
@@ -274,10 +327,12 @@ export function NewAudienceModal({ open, onOpenChange }: NewAudienceModalProps) 
     const motive = [visitLabel, grade, fonction, accompLabel].filter(Boolean).join(' · ');
 
     const payload = {
-      subject: objet,
+      subject,
       motive,
       requesterName: nom,
       requesterOrg: fonction,
+      requesterPhone: phone || undefined,
+      requesterAddress: address || undefined,
       priority,
       confidentiality,
       category: cat,
@@ -299,6 +354,8 @@ export function NewAudienceModal({ open, onOpenChange }: NewAudienceModalProps) 
         motive: payload.motive,
         requesterName: payload.requesterName,
         requesterOrg: payload.requesterOrg,
+        requesterPhone: payload.requesterPhone,
+        requesterAddress: payload.requesterAddress,
         requesterGrade: payload.grade,
         category: payload.category,
         priority: payload.priority,
@@ -328,6 +385,8 @@ export function NewAudienceModal({ open, onOpenChange }: NewAudienceModalProps) 
           motive: payload.motive,
           requesterName: createdApi.requesterName,
           requesterOrg: payload.requesterOrg,
+          requesterPhone: payload.requesterPhone,
+          requesterAddress: payload.requesterAddress,
           status: createdApi.status as Audience['status'],
           priority: createdApi.priority as Priority,
           confidentiality: createdApi.confidentiality as Confidentiality,
@@ -372,7 +431,6 @@ export function NewAudienceModal({ open, onOpenChange }: NewAudienceModalProps) 
       <DialogContent className="max-w-3xl p-5">
         <DialogHeader className="mb-3">
           <DialogTitle>Nouvelle demande d&apos;audience</DialogTitle>
-          <DialogDescription>Classification, demandeur et détails de la visite</DialogDescription>
         </DialogHeader>
 
         {success ? (
@@ -484,7 +542,7 @@ export function NewAudienceModal({ open, onOpenChange }: NewAudienceModalProps) 
               <section className={sectionClass}>
                 <h3 className={sectionTitleClass}>Demandeur</h3>
 
-                <div className="relative">
+                <div className="relative" ref={requesterSearchRef}>
                   <label className={labelClass} htmlFor="nom">Nom *</label>
                   <div className="relative mt-1">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-cream/30" />
@@ -499,6 +557,7 @@ export function NewAudienceModal({ open, onOpenChange }: NewAudienceModalProps) 
                       onChange={(e) => {
                         setRequesterName(e.target.value);
                         setConfirmDuplicate(false);
+                        setShowSearchResults(true);
                       }}
                       onFocus={() => {
                         if (searchResults?.requesters.length) {
@@ -508,19 +567,28 @@ export function NewAudienceModal({ open, onOpenChange }: NewAudienceModalProps) 
                       className={`${inputClass} mt-0 pl-9`}
                     />
                   </div>
-                  {showSearchResults && searchResults?.requesters.length ? (
+                  {searchLoading && requesterName.trim().length >= 2 ? (
+                    <p className="absolute z-20 left-0 right-0 mt-1 rounded-lg border border-carbon-600 bg-carbon-900 px-3 py-2 text-xs text-cream/40">
+                      Recherche…
+                    </p>
+                  ) : null}
+                  {!searchLoading && showSearchResults && searchResults?.requesters.length ? (
                     <div className="absolute z-20 left-0 right-0 mt-1 rounded-lg border border-carbon-600 bg-carbon-900 shadow-xl max-h-48 overflow-y-auto">
                       {searchResults.requesters.map((r) => (
                         <button
                           key={`${r.requesterName}-${r.lastReference}`}
                           type="button"
                           className="w-full text-left px-3 py-2 hover:bg-carbon-800 border-b border-carbon-800/80 last:border-0 cursor-pointer"
+                          onMouseDown={(e) => e.preventDefault()}
                           onClick={() =>
                             applyRequesterSelection(
                               r.requesterName,
                               r.requesterOrg ?? '',
                               r.category,
                               r.motive,
+                              r.requesterPhone,
+                              r.requesterAddress,
+                              r.subject,
                             )
                           }
                         >
@@ -532,6 +600,14 @@ export function NewAudienceModal({ open, onOpenChange }: NewAudienceModalProps) 
                         </button>
                       ))}
                     </div>
+                  ) : null}
+                  {!searchLoading &&
+                  showSearchResults &&
+                  requesterName.trim().length >= 2 &&
+                  searchResults?.requesters.length === 0 ? (
+                    <p className="absolute z-20 left-0 right-0 mt-1 rounded-lg border border-carbon-600 bg-carbon-900 px-3 py-2 text-xs text-cream/40">
+                      Aucun demandeur trouvé dans l&apos;historique
+                    </p>
                   ) : null}
                 </div>
 
@@ -545,6 +621,34 @@ export function NewAudienceModal({ open, onOpenChange }: NewAudienceModalProps) 
                     placeholder="Fonction ou titre"
                     value={requesterFunction}
                     onChange={(e) => setRequesterFunction(e.target.value)}
+                    className={inputClass}
+                  />
+                </div>
+
+                <div>
+                  <label className={labelClass} htmlFor="telephone">Téléphone</label>
+                  <input
+                    id="telephone"
+                    name="telephone"
+                    type="tel"
+                    autoComplete="tel"
+                    placeholder="+243 …"
+                    value={requesterPhone}
+                    onChange={(e) => setRequesterPhone(e.target.value)}
+                    className={inputClass}
+                  />
+                </div>
+
+                <div>
+                  <label className={labelClass} htmlFor="adresse">Adresse</label>
+                  <input
+                    id="adresse"
+                    name="adresse"
+                    type="text"
+                    autoComplete="street-address"
+                    placeholder="Adresse du demandeur"
+                    value={requesterAddress}
+                    onChange={(e) => setRequesterAddress(e.target.value)}
                     className={inputClass}
                   />
                 </div>
@@ -575,16 +679,46 @@ export function NewAudienceModal({ open, onOpenChange }: NewAudienceModalProps) 
                 </div>
 
                 <div>
-                  <label className={labelClass} htmlFor="objet">Objet *</label>
-                  <textarea
-                    id="objet"
-                    name="objet"
-                    rows={2}
+                  <label className={labelClass} htmlFor="motif">Motif d&apos;audience *</label>
+                  <select
+                    id="motif"
+                    name="motif"
                     required
-                    placeholder="Objet de la demande d'audience"
-                    className="mt-1 w-full px-3 py-2 rounded-lg bg-carbon-800 border border-carbon-600 text-sm text-cream focus:outline-none focus:border-military-500 resize-none min-h-[4.5rem]"
-                  />
+                    value={audienceMotif}
+                    onChange={(e) => {
+                      setAudienceMotif(e.target.value);
+                      if (e.target.value !== 'Autre') setMotifOtherDetail('');
+                    }}
+                    className={inputClass}
+                  >
+                    {AUDIENCE_MOTIF_OPTIONS.map((option) => (
+                      <option key={option} value={option}>{option}</option>
+                    ))}
+                  </select>
                 </div>
+
+                <AnimatePresence initial={false}>
+                  {audienceMotif === 'Autre' && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="overflow-hidden"
+                    >
+                      <label className={labelClass} htmlFor="motifOther">Précisez le motif *</label>
+                      <input
+                        id="motifOther"
+                        name="motifOther"
+                        type="text"
+                        required
+                        placeholder="Décrivez le motif de la demande"
+                        value={motifOtherDetail}
+                        onChange={(e) => setMotifOtherDetail(e.target.value)}
+                        className={inputClass}
+                      />
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </section>
             </div>
 

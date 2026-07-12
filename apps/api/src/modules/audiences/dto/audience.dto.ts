@@ -23,6 +23,14 @@ export class CreateAudienceDto {
   requesterGrade?: string;
 
   @IsOptional()
+  @IsString()
+  requesterPhone?: string;
+
+  @IsOptional()
+  @IsString()
+  requesterAddress?: string;
+
+  @IsOptional()
   @IsIn(AUDIENCE_PRIORITIES)
   priority?: AudiencePriority;
 
