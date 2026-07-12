@@ -3,7 +3,10 @@ import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
+import { loadRootEnv } from './load-env';
 import { resolveJwtSecret } from './common/security/jwt-secret';
+
+loadRootEnv();
 
 async function bootstrap() {
   resolveJwtSecret(process.env.JWT_SECRET, process.env.NODE_ENV);
