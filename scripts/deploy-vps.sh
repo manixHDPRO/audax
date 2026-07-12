@@ -102,7 +102,7 @@ if [ -n "$PUBLIC_HOST" ]; then
   echo "  API      : https://${PUBLIC_HOST}/api"
   echo "  TLS      : voir deploy/TLS.md"
 else
-  echo "  Frontend : http://${VPS_IP}:${AUDAX_WEB_PORT:-3001}  (temporaire — configurez TLS)"
+  echo "  Frontend : http://${VPS_IP}:${AUDAX_WEB_PORT:-3000}  (temporaire — configurez TLS)"
   echo "  API      : http://${VPS_IP}:4000/api"
   echo "  ATTENTION: HTTP en clair. Suivez deploy/TLS.md avant production."
 fi

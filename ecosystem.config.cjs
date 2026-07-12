@@ -1,5 +1,5 @@
 /** PM2 — déploiement VPS sans Docker (monorepo npm workspaces) */
-const webPort = Number(process.env.AUDAX_WEB_PORT || 3001);
+const webPort = Number(process.env.AUDAX_WEB_PORT || 3000);
 
 module.exports = {
   apps: [
